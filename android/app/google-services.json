@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "24992553222",
+    "project_id": "restroom-near-u",
+    "storage_bucket": "restroom-near-u.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:24992553222:android:c139822ac9f7976cc4e687",
+        "android_client_info": {
+          "package_name": "com.example.restroom_near_u"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDO7DKAmlwaS4bx1dUWI5C2jeThD4XR33s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
