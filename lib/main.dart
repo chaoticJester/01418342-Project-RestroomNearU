@@ -1,6 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:restroom_near_u/login_page.dart';
+import 'package:restroom_near_u/home_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -13,9 +13,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       routes: {
-        '/login_page': (context) => LoginPage()
+        '/login_page': (context) => LoginPage(),
+        '/home_page' : (context) => HomePage()
       }, 
-      home: LoginPage(),
+      home: HomePage(),
     );
   }
 }
