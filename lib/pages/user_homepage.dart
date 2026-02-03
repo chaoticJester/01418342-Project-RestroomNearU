@@ -37,19 +37,24 @@ class _UserHomePageState extends State<UserHomePage> {
           Positioned(
             top: 60, 
             right: 20, 
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Color(0xFFB2D8D8), 
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(blurRadius: 5, color: Colors.black26)],
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.add_circle_outline, size: 20),
-                  SizedBox(width: 8),
-                  Text("Add New Restroom", style: TextStyle(fontWeight: FontWeight.bold)),
-                ],
+            child: GestureDetector(
+              onTap: () {
+                Navigator.pushNamed(context, '/add_new_restroom');
+              },
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Color(0xFFB2D8D8), 
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(blurRadius: 5, color: Colors.black26)],
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline, size: 20),
+                    SizedBox(width: 8),
+                    Text("Add New Restroom", style: TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
             ),
           ),
