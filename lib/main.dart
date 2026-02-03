@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:restroom_near_u/login_page.dart';
-import 'package:restroom_near_u/home_page.dart';
+import 'package:restroom_near_u/pages/login_page.dart';
+import 'package:restroom_near_u/pages/home_page.dart';
 
 void main() {
   runApp(const MyApp());
