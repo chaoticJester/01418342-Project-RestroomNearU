@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:restroom_near_u/pages/login_page.dart';
-import 'package:restroom_near_u/pages/home_page.dart';
+import 'package:restroom_near_u/pages/user_homepage.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,9 +14,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       routes: {
         '/login_page': (context) => LoginPage(),
-        '/home_page' : (context) => HomePage()
+        '/home_page' : (context) => UserHomePage()
       }, 
-      home: HomePage(),
+      home: UserHomePage(),
     );
   }
 }
