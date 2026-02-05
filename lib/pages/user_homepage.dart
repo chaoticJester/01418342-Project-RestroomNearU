@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/restroom_model.dart';
+import '../services/restroom_service.dart';
+import 'restroom_detail_page.dart';
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({super.key});
@@ -14,25 +17,38 @@ class _UserHomePageState extends State<UserHomePage> {
     zoom: 16.0,
   );
 
+  // Get list of restrooms from service
+  late List<RestroomModel> restrooms;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRestrooms();
+  }
+
+  void _loadRestrooms() {
+    restrooms = RestroomService.getMockRestrooms();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
           // ------------------------------------
-          // 1. ส่วนแผนที่ (Layer ล่างสุด)
+          // 1. Map Section (Bottom Layer)
           // ------------------------------------
           GoogleMap(
             initialCameraPosition: _kGooglePlex,
             //myLocationEnabled: true, 
             zoomControlsEnabled: false, 
             onMapCreated: (GoogleMapController controller) {
-              // เก็บ controller ไว้ใช้ภายหลังได้
+              // Store controller for later use
             },
           ),
 
           // ------------------------------------
-          // 2. ปุ่ม Add New Restroom (มุมขวาบน)
+          // 2. Add New Restroom Button (Top Right)
           // ------------------------------------
           Positioned(
             top: 60, 
@@ -60,7 +76,7 @@ class _UserHomePageState extends State<UserHomePage> {
           ),
 
           // ------------------------------------
-          // 3. ส่วนรายการด้านล่าง (Layer บนสุด)
+          // 3. Bottom List Sheet (Top Layer)
           // ------------------------------------
           DraggableScrollableSheet(
             initialChildSize: 0.4, 
@@ -75,7 +91,7 @@ class _UserHomePageState extends State<UserHomePage> {
                 ),
                 child: Column(
                   children: [
-                    // ขีดเทาๆ ตรงกลาง (Handle)
+                    // Handle bar
                     SizedBox(height: 10),
                     Container(
                       width: 50,
@@ -86,7 +102,7 @@ class _UserHomePageState extends State<UserHomePage> {
                       ),
                     ),
                     
-                    // ช่องค้นหา (Search Bar)
+                    // Search Bar
                     Padding(
                       padding: const EdgeInsets.all(20.0),
                       child: TextField(
@@ -104,15 +120,15 @@ class _UserHomePageState extends State<UserHomePage> {
                       ),
                     ),
 
-                    // รายการห้องน้ำ (ListView)
+                    // Restroom List
                     Expanded(
                       child: ListView.separated(
                         controller: scrollController, 
                         padding: EdgeInsets.zero,
-                        itemCount: 5,
+                        itemCount: restrooms.length,
                         separatorBuilder: (context, index) => Divider(color: Colors.grey[300]),
                         itemBuilder: (context, index) {
-                          return _buildRestroomItem();
+                          return _buildRestroomItem(restrooms[index]);
                         },
                       ),
                     ),
@@ -126,66 +142,86 @@ class _UserHomePageState extends State<UserHomePage> {
     );
   }
 
-  Widget _buildRestroomItem() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ชื่อและรายละเอียด
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Engineer 2nd floor toilet",
-                  style: TextStyle(
-                    fontFamily: 'Serif', 
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  "Lorem ipsum dolor sit amet.",
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          
-          // ดาว (Rating)
-          Expanded(
-            flex: 1,
-            child: Row(
-              children: [
-                Icon(Icons.star, color: Colors.orange, size: 16),
-                SizedBox(width: 4),
-                Text("5.0", style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
+  Widget _buildRestroomItem(RestroomModel restroom) {
+    // Calculate if restroom is currently open
+    final isOpen = RestroomService.isOpen(restroom);
+    final distance = RestroomService.getDistance(restroom.latitude, restroom.longitude);
 
-          // สถานะและราคา
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  "Price : Free",
-                  style: TextStyle(color: Colors.red[300], fontSize: 12),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  "Open", 
-                  style: TextStyle(color: Colors.red[300], fontSize: 12),
-                ),
-              ],
-            ),
+    return InkWell(
+      onTap: () {
+        // Navigate to detail page with restroom model
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RestroomDetailPage(restroom: restroom),
           ),
-        ],
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Name and description
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    restroom.restroomName,
+                    style: TextStyle(
+                      fontFamily: 'Serif', 
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    restroom.address,
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            
+            // Rating stars
+            Expanded(
+              flex: 1,
+              child: Row(
+                children: [
+                  Icon(Icons.star, color: Colors.orange, size: 16),
+                  SizedBox(width: 4),
+                  Text(
+                    restroom.avgRating.toStringAsFixed(1),
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+
+            // Status and price
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    restroom.isFree ? "Price : Free" : "Price : Paid",
+                    style: TextStyle(color: Colors.red[300], fontSize: 12),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    isOpen ? "Open" : "Closed", 
+                    style: TextStyle(color: Colors.red[300], fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
