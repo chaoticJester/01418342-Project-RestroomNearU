@@ -89,25 +89,31 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
+                  // Header with animated back button
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black, width: 1),
-                          ),
-                          child: const Icon(
-                            Icons.arrow_back,
-                            size: 12,
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context),
+                          borderRadius: BorderRadius.circular(20),
+                          splashColor: Colors.black.withOpacity(0.1),
+                          highlightColor: Colors.black.withOpacity(0.05),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.black, width: 1),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back,
+                              size: 16,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 5),
+                      const SizedBox(width: 8),
                       const Text(
                         'Add New Restroom',
                         style: TextStyle(
@@ -145,22 +151,32 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   ),
                   const SizedBox(height: 8),
 
-                  // Use Current Location
-                  GestureDetector(
-                    onTap: _useCurrentLocation,
-                    child: Row(
-                      children: const [
-                        Icon(Icons.location_pin, color: Color(0xFFFFA4A4), size: 24),
-                        SizedBox(width: 3),
-                        Text(
-                          'Use Current Location',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFFFFA4A4),
-                          ),
+                  // Use Current Location with hover effect
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _useCurrentLocation,
+                      borderRadius: BorderRadius.circular(8),
+                      splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
+                      highlightColor: const Color(0xFFFFA4A4).withOpacity(0.1),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.location_pin, color: Color(0xFFFFA4A4), size: 24),
+                            SizedBox(width: 3),
+                            Text(
+                              'Use Current Location',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFFFFA4A4),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -190,6 +206,10 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
@@ -223,6 +243,10 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
                       ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
+                      ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
                     style: const TextStyle(fontSize: 13),
@@ -241,67 +265,85 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      // Free Checkbox
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            isFree = true;
-                            isPaid = false;
-                          });
-                        },
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: isFree ? const Color(0xFFFFA4A4) : Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: isFree ? const Color(0xFFFFA4A4) : Colors.black,
+                      // Free Checkbox with ripple effect
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              isFree = true;
+                              isPaid = false;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: 14,
+                                  height: 14,
+                                  decoration: BoxDecoration(
+                                    color: isFree ? const Color(0xFFFFA4A4) : Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: isFree ? const Color(0xFFFFA4A4) : Colors.black,
+                                    ),
+                                  ),
+                                  child: isFree
+                                      ? const Icon(Icons.check, size: 10, color: Colors.white)
+                                      : null,
                                 ),
-                              ),
-                              child: isFree
-                                  ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                  : null,
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Free',
+                                  style: TextStyle(fontSize: 13, color: Colors.black),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Free',
-                              style: TextStyle(fontSize: 13, color: Colors.black),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 24),
-                      // Paid Checkbox
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            isFree = false;
-                            isPaid = true;
-                          });
-                        },
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: isPaid ? const Color(0xFF2C2C2C) : Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.black),
-                              ),
-                              child: isPaid
-                                  ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                  : null,
+                      const SizedBox(width: 16),
+                      // Paid Checkbox with ripple effect
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              isFree = false;
+                              isPaid = true;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          splashColor: const Color(0xFF2C2C2C).withOpacity(0.2),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: 14,
+                                  height: 14,
+                                  decoration: BoxDecoration(
+                                    color: isPaid ? const Color(0xFF2C2C2C) : Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.black),
+                                  ),
+                                  child: isPaid
+                                      ? const Icon(Icons.check, size: 10, color: Colors.white)
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Paid',
+                                  style: TextStyle(fontSize: 13, color: Colors.black),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Paid',
-                              style: TextStyle(fontSize: 13, color: Colors.black),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -320,51 +362,61 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      // Open Time
+                      // Open Time with hover effect
                       Expanded(
-                        child: GestureDetector(
-                          onTap: () => _selectTime(context, true),
-                          child: Container(
-                            height: 27,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFD9D9D9)),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  openTime?.format(context) ?? '--:--',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.access_time, size: 16),
-                              ],
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _selectTime(context, true),
+                            borderRadius: BorderRadius.circular(8),
+                            splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
+                            child: Container(
+                              height: 32,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0xFFD9D9D9)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    openTime?.format(context) ?? '--:--',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.access_time, size: 16),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 9),
-                      // Close Time
+                      // Close Time with hover effect
                       Expanded(
-                        child: GestureDetector(
-                          onTap: () => _selectTime(context, false),
-                          child: Container(
-                            height: 27,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFD9D9D9)),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  closeTime?.format(context) ?? '--:--',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.access_time, size: 16),
-                              ],
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _selectTime(context, false),
+                            borderRadius: BorderRadius.circular(8),
+                            splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
+                            child: Container(
+                              height: 32,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0xFFD9D9D9)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    closeTime?.format(context) ?? '--:--',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.access_time, size: 16),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -373,35 +425,45 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   ),
                   const SizedBox(height: 8),
 
-                  // 24 Hrs Checkbox
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        is24Hours = !is24Hours;
-                      });
-                    },
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: is24Hours ? const Color(0xFFFFA4A4) : Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: is24Hours ? const Color(0xFFFFA4A4) : Colors.black,
+                  // 24 Hrs Checkbox with ripple effect
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          is24Hours = !is24Hours;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: is24Hours ? const Color(0xFFFFA4A4) : Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: is24Hours ? const Color(0xFFFFA4A4) : Colors.black,
+                                ),
+                              ),
+                              child: is24Hours
+                                  ? const Icon(Icons.check, size: 10, color: Colors.white)
+                                  : null,
                             ),
-                          ),
-                          child: is24Hours
-                              ? const Icon(Icons.check, size: 10, color: Colors.white)
-                              : null,
+                            const SizedBox(width: 8),
+                            const Text(
+                              '24 Hrs',
+                              style: TextStyle(fontSize: 13, color: Colors.black),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '24 Hrs',
-                          style: TextStyle(fontSize: 13, color: Colors.black),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -431,6 +493,10 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
@@ -525,23 +591,28 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      // Add Photo Button
-                      GestureDetector(
-                        onTap: _addPhoto,
-                        child: Container(
-                          width: 68,
-                          height: 45,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: const Color(0xFFD9D9D9).withOpacity(0.87),
-                              style: BorderStyle.solid,
+                      // Add Photo Button with hover effect
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _addPhoto,
+                          borderRadius: BorderRadius.circular(6),
+                          splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
+                          child: Container(
+                            width: 68,
+                            height: 45,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFFD9D9D9).withOpacity(0.87),
+                                style: BorderStyle.solid,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            size: 16,
-                            color: Colors.grey,
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       ),
@@ -561,25 +632,39 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Submit Button
+                  // Submit Button with enhanced hover effect
                   Align(
                     alignment: Alignment.centerRight,
-                    child: ElevatedButton(
-                      onPressed: _submitForm,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFBADFDB),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: const BorderSide(color: Color(0xFFD9D9D9)),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 29, vertical: 11),
-                      ),
-                      child: const Text(
-                        'Submit',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _submitForm,
+                        borderRadius: BorderRadius.circular(8),
+                        splashColor: const Color(0xFF8BC9C3),
+                        highlightColor: const Color(0xFFA8D8D3),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 29, vertical: 11),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFBADFDB),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFD9D9D9)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            'Submit',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -595,32 +680,41 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
   }
 
   Widget _buildAmenityCheckbox(String label, bool value, Function(bool) onChanged) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: Row(
-        children: [
-          Container(
-            width: 14,
-            height: 14,
-            decoration: BoxDecoration(
-              color: value ? const Color(0xFFFFA4A4) : Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: value ? const Color(0xFFFFA4A4) : Colors.black,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        borderRadius: BorderRadius.circular(8),
+        splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: value ? const Color(0xFFFFA4A4) : Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: value ? const Color(0xFFFFA4A4) : Colors.black,
+                  ),
+                ),
+                child: value
+                    ? const Icon(Icons.check, size: 10, color: Colors.white)
+                    : null,
               ),
-            ),
-            child: value
-                ? const Icon(Icons.check, size: 10, color: Colors.white)
-                : null,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 13, color: Colors.black),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: Colors.black),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
