@@ -19,6 +19,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 1)),
         totalLikes: 12,
+        helpfulCount: 15,
         photos: [],
       ),
       ReviewModel(
@@ -31,6 +32,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 3)),
         totalLikes: 8,
+        helpfulCount: 10,
         photos: [],
       ),
       ReviewModel(
@@ -43,6 +45,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 5)),
         totalLikes: 15,
+        helpfulCount: 20,
         photos: [],
       ),
       ReviewModel(
@@ -55,6 +58,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 7)),
         totalLikes: 5,
+        helpfulCount: 7,
         photos: [],
       ),
       ReviewModel(
@@ -67,6 +71,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 10)),
         totalLikes: 20,
+        helpfulCount: 25,
         photos: [],
       ),
       ReviewModel(
@@ -79,6 +84,7 @@ class ReviewService {
         comment: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin euismod libero sit amet diam sagittis pellentesque. Proin Proin lobortis commodo arcu',
         timestamp: now.subtract(const Duration(days: 14)),
         totalLikes: 3,
+        helpfulCount: 5,
         photos: [],
       ),
     ];

@@ -10,6 +10,7 @@ class ReviewModel {
   final String comment;
   final DateTime timestamp;      // แก้: ใช้ DateTime แทน String
   final int totalLikes;
+  final int helpfulCount;        // เพิ่ม: จำนวนคนที่คิดว่ารีวิวนี้มีประโยชน์
   final List<String> photos;     // เพิ่ม: รีวิวอาจจะมีรูปประกอบ
 
   ReviewModel({
@@ -22,6 +23,7 @@ class ReviewModel {
     required this.comment,
     required this.timestamp,
     this.totalLikes = 0,
+    this.helpfulCount = 0,
     this.photos = const [],
   });
 
@@ -38,6 +40,7 @@ class ReviewModel {
       // แปลง Firestore Timestamp เป็น DateTime ของ Dart
       timestamp: (map['timestamp'] as Timestamp).toDate(),
       totalLikes: (map['totalLikes'] ?? 0).toInt(),
+      helpfulCount: (map['helpfulCount'] ?? 0).toInt(),
       photos: List<String>.from(map['photos'] ?? []),
     );
   }
@@ -54,6 +57,7 @@ class ReviewModel {
       // แปลง DateTime กลับเป็น Server Timestamp
       'timestamp': Timestamp.fromDate(timestamp), 
       'totalLikes': totalLikes,
+      'helpfulCount': helpfulCount,
       'photos': photos,
     };
   }

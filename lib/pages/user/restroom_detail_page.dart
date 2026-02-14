@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import '../models/restroom_model.dart';
-import '../models/review_model.dart';
-import '../services/restroom_service.dart';
-import '../services/review_service.dart';
+import '../../models/restroom_model.dart';
+import '../../models/review_model.dart';
+import '../../services/restroom_service.dart';
+import '../../services/review_service.dart';
+import 'photo_gallery_page.dart';
+import 'report_issue_page.dart';
+import 'write_review_page.dart';
 
 class RestroomDetailPage extends StatefulWidget {
   final RestroomModel restroom;
@@ -22,6 +25,14 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
   late Map<String, int> ratingBreakdown;
   late bool isOpen;
   late String distance;
+  String selectedFilter = 'Recent';
+
+  final List<String> filterOptions = [
+    'Recent',
+    'Highest Rating',
+    'Lowest Rating',
+    'Most Helpful',
+  ];
 
   @override
   void initState() {
@@ -44,6 +55,28 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
       widget.restroom.latitude,
       widget.restroom.longitude,
     );
+  }
+
+  void _sortReviews(String filter) {
+    setState(() {
+      selectedFilter = filter;
+      
+      switch (filter) {
+        case 'Recent':
+          // Sort by date (most recent first)
+          reviews.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          break;
+        case 'Highest Rating':
+          reviews.sort((a, b) => b.rating.compareTo(a.rating));
+          break;
+        case 'Lowest Rating':
+          reviews.sort((a, b) => a.rating.compareTo(b.rating));
+          break;
+        case 'Most Helpful':
+          reviews.sort((a, b) => b.helpfulCount.compareTo(a.helpfulCount));
+          break;
+      }
+    });
   }
 
   @override
@@ -109,21 +142,39 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
   Widget _buildHeaderImage() {
     return Stack(
       children: [
-        Container(
-          height: 250,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
+        GestureDetector(
+          onTap: () {
+            // Open photo gallery when tapping on header image
+            if (widget.restroom.photos.isNotEmpty) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PhotoGalleryPage(
+                    restroomId: widget.restroom.restroomId,
+                    restroomName: widget.restroom.restroomName,
+                    photos: widget.restroom.photos,
+                    initialIndex: 0,
+                  ),
+                ),
+              );
+            }
+          },
+          child: Container(
+            height: 250,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+            ),
+            child: widget.restroom.photos.isNotEmpty
+                ? Image.network(
+                    widget.restroom.photos.first,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(Icons.wc, size: 80, color: Colors.grey[400]);
+                    },
+                  )
+                : Icon(Icons.wc, size: 80, color: Colors.grey[400]),
           ),
-          child: widget.restroom.photos.isNotEmpty
-              ? Image.network(
-                  widget.restroom.photos.first,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Icon(Icons.wc, size: 80, color: Colors.grey[400]);
-                  },
-                )
-              : Icon(Icons.wc, size: 80, color: Colors.grey[400]),
         ),
         // Back button
         Positioned(
@@ -336,7 +387,18 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
             ),
             GestureDetector(
               onTap: () {
-                // TODO: Open photo gallery
+                // Navigate to photo gallery
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PhotoGalleryPage(
+                      restroomId: widget.restroom.restroomId,
+                      restroomName: widget.restroom.restroomName,
+                      photos: widget.restroom.photos,
+                      initialIndex: 0,
+                    ),
+                  ),
+                );
               },
               child: const Text(
                 'View All Photos',
@@ -366,6 +428,13 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                 label: 'Direction',
                 onTap: () {
                   // TODO: Open maps with lat/lng
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Opening directions to ${widget.restroom.restroomName}',
+                      ),
+                    ),
+                  );
                 },
               ),
             ),
@@ -375,7 +444,21 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                 icon: Icons.rate_review,
                 label: 'Review',
                 onTap: () {
-                  // TODO: Scroll to reviews or open review form
+                  // Navigate to write review page
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => WriteReviewPage(
+                        restroomId: widget.restroom.restroomId,
+                        restroomName: widget.restroom.restroomName,
+                      ),
+                    ),
+                  ).then((_) {
+                    // Reload reviews after returning from write review page
+                    setState(() {
+                      _loadData();
+                    });
+                  });
                 },
               ),
             ),
@@ -389,7 +472,18 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                 icon: Icons.add_a_photo,
                 label: 'Add Photo',
                 onTap: () {
-                  // TODO: Add photo
+                  // Navigate to photo gallery (which has add photo functionality)
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PhotoGalleryPage(
+                        restroomId: widget.restroom.restroomId,
+                        restroomName: widget.restroom.restroomName,
+                        photos: widget.restroom.photos,
+                        initialIndex: 0,
+                      ),
+                    ),
+                  );
                 },
               ),
             ),
@@ -399,7 +493,16 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                 icon: Icons.flag,
                 label: 'Report',
                 onTap: () {
-                  // TODO: Report
+                  // Navigate to report issue page
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReportIssuePage(
+                        restroomId: widget.restroom.restroomId,
+                        restroomName: widget.restroom.restroomName,
+                      ),
+                    ),
+                  );
                 },
               ),
             ),
@@ -428,43 +531,115 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                 ),
               ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFD9D9D9)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'Add Review',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+            GestureDetector(
+              onTap: () {
+                // Navigate to write review page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WriteReviewPage(
+                      restroomId: widget.restroom.restroomId,
+                      restroomName: widget.restroom.restroomName,
+                    ),
+                  ),
+                ).then((_) {
+                  // Reload reviews after returning from write review page
+                  setState(() {
+                    _loadData();
+                  });
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFD9D9D9)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Add Review',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        // Recent dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(100),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Text(
-                'Recent',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+        // Filter dropdown
+        GestureDetector(
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: const Color(0xFFFCF9EA),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(20),
                 ),
               ),
-              SizedBox(width: 8),
-              Icon(Icons.arrow_drop_down, size: 24),
-            ],
+              builder: (context) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Sort Reviews',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ...filterOptions.map((option) {
+                      final isSelected = selectedFilter == option;
+                      return ListTile(
+                        title: Text(
+                          option,
+                          style: TextStyle(
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected ? const Color(0xFFBADFDB) : Colors.black,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? const Icon(
+                                Icons.check,
+                                color: Color(0xFFBADFDB),
+                              )
+                            : null,
+                        onTap: () {
+                          _sortReviews(option);
+                          Navigator.pop(context);
+                        },
+                      );
+                    }).toList(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: Colors.grey.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  selectedFilter,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_drop_down, size: 24),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -586,17 +761,48 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
     return Wrap(
       spacing: 2,
       runSpacing: 2,
-      children: List.generate(8, (index) {
-        return Container(
-          width: 78,
-          height: 54,
-          decoration: BoxDecoration(
-            color: const Color(0xFFD9D9D9),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.black, width: 0.5),
-          ),
-        );
-      }),
+      children: List.generate(
+        widget.restroom.photos.length > 8 ? 8 : widget.restroom.photos.length,
+        (index) {
+          return GestureDetector(
+            onTap: () {
+              // Navigate to photo gallery with specific photo
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PhotoGalleryPage(
+                    restroomId: widget.restroom.restroomId,
+                    restroomName: widget.restroom.restroomName,
+                    photos: widget.restroom.photos,
+                    initialIndex: index,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              width: 78,
+              height: 54,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD9D9D9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.black, width: 0.5),
+              ),
+              child: widget.restroom.photos.isNotEmpty && index < widget.restroom.photos.length
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.network(
+                        widget.restroom.photos[index],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.broken_image, color: Colors.grey);
+                        },
+                      ),
+                    )
+                  : const Icon(Icons.photo, color: Colors.grey),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -706,7 +912,70 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
           const SizedBox(height: 4),
           GestureDetector(
             onTap: () {
-              // TODO: Expand review
+              // TODO: Expand review or show full review dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFFFCF9EA),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: Text(
+                    review.reviewerName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.star, size: 16, color: Colors.orange),
+                            const SizedBox(width: 4),
+                            Text(
+                              review.rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFBADFDB),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                ReviewService.getRatingBadge(review.rating),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          review.comment,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
             },
             child: const Text(
               'read More .',
