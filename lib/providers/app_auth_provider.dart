@@ -112,6 +112,50 @@ class AppAuthProvider extends ChangeNotifier {
     }
   }
 
+  // ฟังก์ชันส่งอีเมลรีเซ็ตรหัสผ่าน 
+  Future<void> resetPassword(String email, BuildContext context) async {
+    if (email.isEmpty) {
+      _showError(context, "Please enter your email.");
+      return;
+    }
+
+    try {
+      _setLoading(true);
+      
+      // 1. ดึงข้อมูล User จาก Database ด้วยอีเมลก่อน
+      final userModel = await _userService.getUserByEmail(email);
+
+      // 2. เช็คว่าเป็น Admin หรือไม่?
+      if (userModel != null && userModel.role == Role.admin) {
+        // ถ้าเป็น Admin ให้หยุดการทำงานทันที และโชว์ Error
+        if (context.mounted) {
+           _showError(context, "Admin passwords cannot be reset here. Please contact the system administrator.");
+        }
+        return; // เด้งออกจากฟังก์ชัน ไม่ทำคำสั่งบรรทัดถัดไป
+      }
+
+      // 3. ถ้าไม่ใช่ Admin (เป็น User ธรรมดา) ให้ส่งอีเมลรีเซ็ตตามปกติ
+      await _auth.sendPasswordResetEmail(email: email);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Password reset link sent! Please check your email."),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context); 
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = "Error: ${e.message}";
+      if (e.code == 'user-not-found') message = "No user found for that email.";
+      
+      _showError(context, message);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // Helper function จัดการสถานะโหลด
   void _setLoading(bool value) {
     _isLoading = value;

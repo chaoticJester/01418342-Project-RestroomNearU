@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:restroom_near_u/providers/app_auth_provider.dart';
 import 'register_page.dart';
+import 'forget_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -94,17 +95,17 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 10),
                 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end, 
-                  children: [
-                    TextButton(
-                      onPressed: () {},
-                      child: const Text(
-                        "Forgot your password?",
-                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold), 
-                      ),
-                    ),
-                  ],
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ForgotPasswordPage()), 
+                    );
+                  },
+                  child: const Text(
+                    "Forgot your password?",
+                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold), 
+                  ),
                 ),
                 const SizedBox(height: 10),
                 

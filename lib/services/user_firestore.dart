@@ -70,6 +70,26 @@ class UserService {
     }
   }
 
+  // 3. ค้นหาข้อมูล User จาก Email
+  Future<UserModel?> getUserByEmail(String email) async {
+    try {
+      // ค้นหาใน collection 'users' ที่ฟิลด์ 'email' ตรงกับที่กรอกมา
+      final snapshot = await _userCollection
+          .where('email', isEqualTo: email)
+          .limit(1) // เอาแค่คนแรกที่เจอ
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        // ถ้าเจอข้อมูล ให้แปลงเป็น UserModel
+        return UserModel.fromMap(snapshot.docs.first.data() as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching user by email: $e");
+      return null;
+    }
+  }
+
   // 3. ตรวจสอบว่าเป็น Admin หรือไม่? 
   Future<bool> isAdmin() async {
     final user = _auth.currentUser;
