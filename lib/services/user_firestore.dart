@@ -38,6 +38,10 @@ class UserService {
     }
   }
 
+  Future<void> createNewUser(UserModel user) async {
+    await _userCollection.doc(user.userId).set(user.toMap());
+  }
+
   // READ: อ่านข้อมูล User
   // 1. ดึงข้อมูล User ปัจจุบันแบบ Realtime (ใช้แสดงในหน้า Profile)
   Stream<UserModel?> getCurrentUserStream() {

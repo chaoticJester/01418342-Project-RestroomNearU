@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart'; 
-import 'firebase_options.dart'; 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
+import 'package:restroom_near_u/models/user_model.dart';
+import 'package:restroom_near_u/services/user_firestore.dart'; 
 import 'package:restroom_near_u/pages/login_page.dart';
 import 'package:restroom_near_u/pages/user/user_homepage.dart';
 import 'package:restroom_near_u/pages/user/add_new_restroom_page.dart';
+import 'package:restroom_near_u/pages/admin/admin_homepage.dart';
+import 'package:provider/provider.dart';
+import 'package:restroom_near_u/providers/app_auth_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); 
@@ -11,7 +17,14 @@ void main() async {
   await Firebase.initializeApp( 
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AppAuthProvider()),
+      ],
+      child: const MyApp(),
+    )
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -22,10 +35,53 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       routes: {
         '/login_page': (context) => LoginPage(),
-        '/home_page' : (context) => UserHomePage(),
+        '/user_homepage' : (context) => UserHomePage(),
         '/add_new_restroom': (context) => const AddNewRestroomPage(),
+        '/admin_homepage': (context) => AdminHomePage(),
       }, 
-      home: UserHomePage(),
+      home: StreamBuilder<User?>(
+        // Login หรือยัง?
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, authSnapshot) {
+          // เช็คสถานะ Auth
+          if(authSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          // มีไอดี Login อยู่
+          if(authSnapshot.hasData) {
+            final User firebaseUser = authSnapshot.data!;
+
+            // เช็ค Role
+            return FutureBuilder<UserModel?>(
+              future: UserService().getUserById(firebaseUser.uid), 
+              builder: (context, userSnapshot) {
+                // ดึงข้อมูลจาก Firestore
+                if(userSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                // ได้ข้อมูลมาแล้ว
+                if(userSnapshot.hasData && userSnapshot.data != null) {
+                  final UserModel userModel = userSnapshot.data!;
+
+                  // ส่งไปตาม role
+                  if(userModel.role == Role.admin) {
+                    return const AdminHomePage();
+                  } else {
+                    return const UserHomePage();
+                  }
+                }
+
+                return const UserHomePage();
+              }
+            );
+          }
+          return const LoginPage();
+        }
+      ),
     );
   }
 }
