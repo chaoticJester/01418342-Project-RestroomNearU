@@ -9,21 +9,23 @@ import 'report_issue_page.dart';
 import 'write_review_page.dart';
 
 // ─────────────────────────────────────────────
-// Design tokens
+// Design tokens - Figma inspired theme
 // ─────────────────────────────────────────────
 class _C {
-  static const bg        = Color(0xFFFCF9EA);
-  static const card      = Color(0xFFF7F4E6);
-  static const teal      = Color(0xFFBADFDB);
-  static const tealDark  = Color(0xFF7BBFBA);
-  static const orange    = Color(0xFFE8753D);
-  static const green     = Color(0xFF34A853);
-  static const red       = Color(0xFFB3261E);
-  static const textDark  = Color(0xFF1C1B1F);
-  static const textMid   = Color(0xFF6B6874);
-  static const textLight = Color(0xFFAEABB8);
-  static const divider   = Color(0xFFECE9DA);
-  static const fieldFill = Color(0xFFF2EFE0);
+  static const bg        = Color(0xFFF5F1E8);  // Warm cream background
+  static const card      = Color(0xFFFFFDFA);  // Lighter card surface
+  static const pink      = Color(0xFFEC9B9B);  // Soft pink accent
+  static const pinkLight = Color(0xFFF5D4D4);  // Light pink for backgrounds
+  static const mint      = Color(0xFFA8D5D5);  // Mint/teal accent
+  static const mintDark  = Color(0xFF88B5B5);  // Darker mint
+  static const orange    = Color(0xFFF5A162);  // Warm orange
+  static const green     = Color(0xFF7CB87C);  // Soft green
+  static const red       = Color(0xFFD77A7A);  // Soft red
+  static const textDark  = Color(0xFF2C2C2C);  // Near black
+  static const textMid   = Color(0xFF6B6B6B);  // Medium gray
+  static const textLight = Color(0xFFA5A5A5);  // Light gray
+  static const divider   = Color(0xFFE8E4DB);  // Soft divider
+  static const fieldFill = Color(0xFFFFFBF5);  // Input field background
 }
 
 class RestroomDetailPage extends StatefulWidget {
@@ -155,15 +157,15 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           child: Container(
             height: 260,
             width: double.infinity,
-            color: _C.teal.withOpacity(0.35),
+            color: _C.pinkLight.withOpacity(0.5),
             child: widget.restroom.photos.isNotEmpty
                 ? Image.network(
                     widget.restroom.photos.first,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.wc_rounded, size: 72, color: _C.tealDark),
+                        const Icon(Icons.wc_rounded, size: 72, color: _C.pink),
                   )
-                : const Icon(Icons.wc_rounded, size: 72, color: _C.tealDark),
+                : const Icon(Icons.wc_rounded, size: 72, color: _C.pink),
           ),
         ),
 
@@ -232,10 +234,24 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                   children: [
                     // Rating chip
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: _C.orange.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(
+                          colors: [
+                            _C.orange.withOpacity(0.22),
+                            _C.orange.withOpacity(0.1),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _C.orange.withOpacity(0.2),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -261,10 +277,24 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                     const SizedBox(width: 8),
                     // Open / closed chip
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: (isOpen ? _C.green : _C.red).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(
+                          colors: [
+                            (isOpen ? _C.green : _C.red).withOpacity(0.22),
+                            (isOpen ? _C.green : _C.red).withOpacity(0.1),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isOpen ? _C.green : _C.red).withOpacity(0.2),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Text(
                         isOpen ? 'Open' : 'Closed',
@@ -303,10 +333,10 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
         icon: Icons.info_outline_rounded,
         child: Column(
           children: [
-            _InfoRow(icon: Icons.location_on_rounded, iconColor: _C.red,
+            _InfoRow(icon: Icons.location_on_rounded, iconColor: _C.pink,
                 label: 'Location', value: widget.restroom.address, sub: distance),
             const _Divider(),
-            _InfoRow(icon: Icons.access_time_rounded, iconColor: _C.tealDark,
+            _InfoRow(icon: Icons.access_time_rounded, iconColor: _C.mint,
                 label: 'Hours', value: hours,
                 sub: isOpen ? 'Currently Open' : 'Currently Closed',
                 subColor: isOpen ? _C.green : _C.red),
@@ -341,12 +371,23 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               child: Row(
                 children: [
                   Container(
-                    width: 30, height: 30,
+                    width: 32, height: 32,
                     decoration: BoxDecoration(
-                      color: _C.teal.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_C.pinkLight, _C.pink.withOpacity(0.3)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _C.pink.withOpacity(0.2),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    child: Icon(icon, size: 16, color: _C.tealDark),
+                    child: Icon(icon, size: 16, color: _C.pink),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -367,7 +408,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                             minHeight: 5,
                             backgroundColor: _C.divider,
                             valueColor:
-                                const AlwaysStoppedAnimation<Color>(_C.tealDark),
+                                const AlwaysStoppedAnimation<Color>(_C.mint),
                           ),
                         ),
                       ],
@@ -408,13 +449,24 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: available
-                    ? _C.teal.withOpacity(0.2)
-                    : _C.fieldFill,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: available ? _C.tealDark.withOpacity(0.35) : _C.divider,
-                ),
+                gradient: available
+                    ? LinearGradient(
+                        colors: [_C.pinkLight, _C.pink.withOpacity(0.15)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: available ? null : _C.fieldFill,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: available
+                    ? [
+                        BoxShadow(
+                          color: _C.pink.withOpacity(0.15),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -422,7 +474,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                   Icon(
                     available ? Icons.check_rounded : Icons.close_rounded,
                     size: 12,
-                    color: available ? _C.tealDark : _C.textLight,
+                    color: available ? _C.pink : _C.textLight,
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -452,12 +504,23 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
         icon: Icons.photo_library_rounded,
         trailing: GestureDetector(
           onTap: _openGallery,
-          child: const Text(
-            'View All',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: _C.tealDark),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_C.mint.withOpacity(0.22), _C.mint.withOpacity(0.08)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'View All',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _C.mint),
+            ),
           ),
         ),
         child: photos.isEmpty
@@ -489,8 +552,8 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: Stack(fit: StackFit.expand, children: [
-                      Container(color: _C.teal.withOpacity(0.2),
-                          child: const Icon(Icons.photo, color: _C.tealDark)),
+                      Container(color: _C.pinkLight.withOpacity(0.4),
+                          child: const Icon(Icons.photo, color: _C.pink)),
                       if (i < photos.length)
                         Image.network(photos[i], fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => const SizedBox()),
@@ -523,11 +586,11 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           _ActionBtn(
             icon: Icons.navigation_rounded,
             label: 'Direction',
-            color: _C.tealDark,
+            color: _C.mint,
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Opening directions to ${widget.restroom.restroomName}'),
-                backgroundColor: _C.tealDark,
+                backgroundColor: _C.mint,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
@@ -538,14 +601,14 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           _ActionBtn(
             icon: Icons.rate_review_rounded,
             label: 'Review',
-            color: _C.orange,
+            color: _C.pink,
             onTap: _openWriteReview,
           ),
           const SizedBox(width: 10),
           _ActionBtn(
             icon: Icons.add_a_photo_rounded,
             label: 'Add Photo',
-            color: _C.tealDark,
+            color: _C.orange,
             onTap: _openGallery,
           ),
           const SizedBox(width: 10),
@@ -575,10 +638,21 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
         trailing: GestureDetector(
           onTap: _openWriteReview,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color: _C.tealDark,
-              borderRadius: BorderRadius.circular(10),
+              gradient: LinearGradient(
+                colors: [_C.mint, _C.mintDark],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: _C.mint.withOpacity(0.4),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
             child: const Text('Add Review',
                 style: TextStyle(
@@ -595,17 +669,23 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               onTap: _showSortSheet,
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: _C.fieldFill,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _C.divider),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.sort_rounded,
-                        size: 15, color: _C.tealDark),
+                        size: 15, color: _C.mint),
                     const SizedBox(width: 6),
                     Text(selectedFilter,
                         style: const TextStyle(
@@ -666,27 +746,41 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               final sel = selectedFilter == opt;
               return ListTile(
                 leading: Container(
-                  width: 32, height: 32,
+                  width: 34, height: 34,
                   decoration: BoxDecoration(
-                    color: sel
-                        ? _C.teal.withOpacity(0.3)
-                        : _C.fieldFill,
-                    borderRadius: BorderRadius.circular(8),
+                    gradient: sel
+                        ? LinearGradient(
+                            colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    color: sel ? null : _C.fieldFill,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: sel
+                        ? [
+                            BoxShadow(
+                              color: _C.pink.withOpacity(0.18),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Icon(Icons.sort_rounded,
                       size: 16,
-                      color: sel ? _C.tealDark : _C.textLight),
+                      color: sel ? _C.pink : _C.textLight),
                 ),
                 title: Text(opt,
                     style: TextStyle(
                         fontWeight: sel
                             ? FontWeight.w700
                             : FontWeight.w500,
-                        color: sel ? _C.tealDark : _C.textDark,
+                        color: sel ? _C.pink : _C.textDark,
                         fontSize: 14)),
                 trailing: sel
                     ? const Icon(Icons.check_rounded,
-                        color: _C.tealDark, size: 18)
+                        color: _C.pink, size: 18)
                     : null,
                 onTap: () {
                   _sortReviews(opt);
@@ -719,10 +813,24 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               Row(children: [
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                      color: _C.orange.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(8)),
+                      gradient: LinearGradient(
+                        colors: [
+                          _C.orange.withOpacity(0.22),
+                          _C.orange.withOpacity(0.1),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _C.orange.withOpacity(0.18),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.star_rounded,
                         color: _C.orange, size: 14),
@@ -737,15 +845,26 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                 const SizedBox(width: 8),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                      color: _C.teal.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(8)),
+                      gradient: LinearGradient(
+                        colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _C.pink.withOpacity(0.15),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]),
                   child: Text(ReviewService.getRatingBadge(review.rating),
                       style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: _C.tealDark)),
+                          color: _C.pink)),
                 ),
               ]),
               const SizedBox(height: 12),
@@ -760,7 +879,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             onPressed: () => Navigator.pop(context),
             child: const Text('Close',
                 style: TextStyle(
-                    color: _C.tealDark, fontWeight: FontWeight.w700)),
+                    color: _C.mint, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -790,13 +909,16 @@ class _SectionCard extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         color: _C.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _C.divider),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3)),
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 4)),
+          BoxShadow(
+              color: Colors.white.withOpacity(0.8),
+              blurRadius: 0,
+              offset: const Offset(0, 0)),
         ],
       ),
       child: Column(
@@ -807,12 +929,23 @@ class _SectionCard extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 30, height: 30,
+                  width: 32, height: 32,
                   decoration: BoxDecoration(
-                    color: _C.teal.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(8),
+                    gradient: LinearGradient(
+                      colors: [_C.pinkLight, _C.pink.withOpacity(0.25)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _C.pink.withOpacity(0.15),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: Icon(icon, size: 16, color: _C.tealDark),
+                  child: Icon(icon, size: 16, color: _C.pink),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -962,18 +1095,30 @@ class _ActionBtnState extends State<_ActionBtn>
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              color: widget.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: widget.color.withOpacity(0.3), width: 1.2),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  widget.color.withOpacity(0.18),
+                  widget.color.withOpacity(0.08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withOpacity(0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               children: [
-                Icon(widget.icon, size: 20, color: widget.color),
-                const SizedBox(height: 4),
+                Icon(widget.icon, size: 22, color: widget.color),
+                const SizedBox(height: 6),
                 Text(widget.label,
                     style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: widget.color)),
               ],
@@ -1012,11 +1157,17 @@ class _ReviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _C.fieldFill,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _C.divider),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1026,13 +1177,24 @@ class _ReviewCard extends StatelessWidget {
             children: [
               // Avatar
               Container(
-                width: 36, height: 36,
+                width: 38, height: 38,
                 decoration: BoxDecoration(
-                  color: _C.teal.withOpacity(0.3),
+                  gradient: LinearGradient(
+                    colors: [_C.pinkLight, _C.pink.withOpacity(0.3)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _C.pink.withOpacity(0.2),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: const Icon(Icons.person_rounded,
-                    size: 20, color: _C.tealDark),
+                    size: 20, color: _C.pink),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1053,10 +1215,24 @@ class _ReviewCard extends StatelessWidget {
               // Rating chip
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _C.orange.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    colors: [
+                      _C.orange.withOpacity(0.18),
+                      _C.orange.withOpacity(0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _C.orange.withOpacity(0.15),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.star_rounded,
@@ -1075,16 +1251,27 @@ class _ReviewCard extends StatelessWidget {
           // Badge
           Container(
             padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: _C.teal.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(7),
+              gradient: LinearGradient(
+                colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: _C.pink.withOpacity(0.12),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Text(ReviewService.getRatingBadge(review.rating),
                 style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: _C.tealDark)),
+                    color: _C.pink)),
           ),
           const SizedBox(height: 8),
           // Comment
@@ -1103,16 +1290,26 @@ class _ReviewCard extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isHelpful
-                        ? _C.teal.withOpacity(0.3)
-                        : _C.divider.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: isHelpful
-                            ? _C.tealDark.withOpacity(0.4)
-                            : _C.divider),
+                    gradient: isHelpful
+                        ? LinearGradient(
+                            colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    color: isHelpful ? null : _C.divider.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: isHelpful
+                        ? [
+                            BoxShadow(
+                              color: _C.pink.withOpacity(0.2),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(
@@ -1120,7 +1317,7 @@ class _ReviewCard extends StatelessWidget {
                           ? Icons.thumb_up_rounded
                           : Icons.thumb_up_outlined,
                       size: 12,
-                      color: isHelpful ? _C.tealDark : _C.textLight,
+                      color: isHelpful ? _C.pink : _C.textLight,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -1128,7 +1325,7 @@ class _ReviewCard extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isHelpful ? _C.tealDark : _C.textLight),
+                          color: isHelpful ? _C.pink : _C.textLight),
                     ),
                   ]),
                 ),
@@ -1140,9 +1337,9 @@ class _ReviewCard extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: _C.tealDark,
+                        color: _C.mint,
                         decoration: TextDecoration.underline,
-                        decorationColor: _C.tealDark)),
+                        decorationColor: _C.mint)),
               ),
             ],
           ),
