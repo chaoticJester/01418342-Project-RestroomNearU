@@ -91,9 +91,9 @@ class _ProfilePageState extends State<ProfilePage>
       ),
     );
     if (confirmed == true) {
-      await _auth.signOut();
+      await FirebaseAuth.instance.signOut();
       if (context.mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login_page', (_) => false);
+        Navigator.popUntil(context, (route) => route.isFirst); 
       }
     }
   }

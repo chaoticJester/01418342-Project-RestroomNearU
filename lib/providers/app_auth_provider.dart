@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart' ;
 import 'package:restroom_near_u/services/user_firestore.dart'; 
 import 'package:restroom_near_u/models/user_model.dart';
+import 'package:restroom_near_u/pages/user/user_homepage.dart';
 
 class AppAuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -56,6 +57,9 @@ class AppAuthProvider extends ChangeNotifier {
       if (e.code == 'email-already-in-use') message = "This email is already used.";
       
       _showError(context, message);
+    } catch (e) { 
+      _showError(context, "System Error: ${e.toString()}");
+      print("System Error: $e");
     } finally {
       _setLoading(false);
     }
@@ -72,6 +76,8 @@ class AppAuthProvider extends ChangeNotifier {
       _setLoading(true);
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       // ถ้าสำเร็จ StreamBuilder ใน main.dart จะพาไปหน้า Home เอง
+
+      
     } on FirebaseAuthException catch (e) {
       _showError(context, "Login failed: ${e.message}");
     } finally {
