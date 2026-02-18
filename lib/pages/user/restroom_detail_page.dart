@@ -26,6 +26,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
   late bool isOpen;
   late String distance;
   String selectedFilter = 'Recent';
+  Set<String> helpfulReviewIds = {}; // Track which reviews user marked as helpful
 
   final List<String> filterOptions = [
     'Recent',
@@ -156,7 +157,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                     initialIndex: 0,
                   ),
                 ),
-              );
+                  );
             }
           },
           child: Container(
@@ -909,11 +910,91 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
-          GestureDetector(
-            onTap: () {
-              // TODO: Expand review or show full review dialog
-              showDialog(
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // Helpful button
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (helpfulReviewIds.contains(review.reviewId)) {
+                        helpfulReviewIds.remove(review.reviewId);
+                        // TODO: Decrease helpful count in Firebase
+                      } else {
+                        helpfulReviewIds.add(review.reviewId);
+                        // TODO: Increase helpful count in Firebase
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Marked as helpful'),
+                            duration: Duration(seconds: 1),
+                          ),
+                        );
+                      }
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: helpfulReviewIds.contains(review.reviewId)
+                          ? const Color(0xFFBADFDB)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: helpfulReviewIds.contains(review.reviewId)
+                            ? const Color(0xFFBADFDB)
+                            : Colors.grey.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          helpfulReviewIds.contains(review.reviewId)
+                              ? Icons.thumb_up
+                              : Icons.thumb_up_outlined,
+                          size: 12,
+                          color: helpfulReviewIds.contains(review.reviewId)
+                              ? Colors.black
+                              : Colors.grey,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Helpful',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: helpfulReviewIds.contains(review.reviewId)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: helpfulReviewIds.contains(review.reviewId)
+                                ? Colors.black
+                                : Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '(${review.helpfulCount + (helpfulReviewIds.contains(review.reviewId) ? 1 : 0)})',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // Read more button
+              GestureDetector(
+                onTap: () {
+                  // TODO: Expand review or show full review dialog
+                  showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
                   backgroundColor: const Color(0xFFFCF9EA),
@@ -976,15 +1057,17 @@ class _RestroomDetailPageState extends State<RestroomDetailPage> {
                   ],
                 ),
               );
-            },
-            child: const Text(
-              'read More .',
-              style: TextStyle(
-                fontSize: 8,
-                decoration: TextDecoration.underline,
-                fontWeight: FontWeight.w800,
+                },
+                child: const Text(
+                  'read More .',
+                  style: TextStyle(
+                    fontSize: 8,
+                    decoration: TextDecoration.underline,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

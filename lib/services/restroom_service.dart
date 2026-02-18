@@ -7,6 +7,8 @@ class RestroomService {
   
   // Mock restroom data
   static List<RestroomModel> getMockRestrooms() {
+    final now = DateTime.now();
+    
     return [
       RestroomModel(
         restroomId: '1',
@@ -33,6 +35,10 @@ class RestroomService {
         reviewIds: ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'],
         avgRating: 5.0,
         totalRatings: 23,
+        createdAt: now.subtract(const Duration(days: 180)),
+        updatedAt: now.subtract(const Duration(days: 2)),
+        createdBy: 'user123',
+        updatedBy: 'user456',
       ),
       RestroomModel(
         restroomId: '2',
@@ -59,6 +65,9 @@ class RestroomService {
         reviewIds: [],
         avgRating: 4.5,
         totalRatings: 15,
+        createdAt: now.subtract(const Duration(days: 120)),
+        updatedAt: now.subtract(const Duration(days: 5)),
+        createdBy: 'user789',
       ),
       RestroomModel(
         restroomId: '3',
@@ -85,6 +94,9 @@ class RestroomService {
         reviewIds: [],
         avgRating: 4.8,
         totalRatings: 42,
+        createdAt: now.subtract(const Duration(days: 365)),
+        updatedAt: now.subtract(const Duration(days: 1)),
+        createdBy: 'user123',
       ),
     ];
   }

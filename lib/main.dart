@@ -6,6 +6,7 @@ import 'package:restroom_near_u/models/user_model.dart';
 import 'package:restroom_near_u/services/user_firestore.dart'; 
 import 'package:restroom_near_u/pages/login_page.dart';
 import 'package:restroom_near_u/pages/user/user_homepage.dart';
+import 'package:restroom_near_u/pages/user/profile_page.dart';
 import 'package:restroom_near_u/pages/user/add_new_restroom_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_homepage.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +38,7 @@ class MyApp extends StatelessWidget {
         '/login_page': (context) => LoginPage(),
         '/user_homepage' : (context) => UserHomePage(),
         '/add_new_restroom': (context) => const AddNewRestroomPage(),
+        '/profile': (context) => const ProfilePage(),
         '/admin_homepage': (context) => AdminHomePage(),
       }, 
       home: StreamBuilder<User?>(

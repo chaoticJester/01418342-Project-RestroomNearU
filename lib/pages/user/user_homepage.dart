@@ -13,11 +13,10 @@ class UserHomePage extends StatefulWidget {
 
 class _UserHomePageState extends State<UserHomePage> {
   static final CameraPosition _kGooglePlex = CameraPosition(
-    target: LatLng(13.8476, 100.5696), 
+    target: LatLng(13.8476, 100.5696),
     zoom: 16.0,
   );
 
-  // Get list of restrooms from service
   late List<RestroomModel> restrooms;
 
   @override
@@ -40,31 +39,26 @@ class _UserHomePageState extends State<UserHomePage> {
           // ------------------------------------
           GoogleMap(
             initialCameraPosition: _kGooglePlex,
-            //myLocationEnabled: true, 
-            zoomControlsEnabled: false, 
-            onMapCreated: (GoogleMapController controller) {
-              // Store controller for later use
-            },
+            zoomControlsEnabled: false,
+            onMapCreated: (GoogleMapController controller) {},
           ),
 
           // ------------------------------------
           // 2. Add New Restroom Button (Top Right)
           // ------------------------------------
           Positioned(
-            top: 60, 
-            right: 20, 
+            top: 60,
+            right: 20,
             child: GestureDetector(
-              onTap: () {
-                Navigator.pushNamed(context, '/add_new_restroom');
-              },
+              onTap: () => Navigator.pushNamed(context, '/add_new_restroom'),
               child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Color(0xFFB2D8D8), 
+                  color: const Color(0xFFB2D8D8),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(blurRadius: 5, color: Colors.black26)],
+                  boxShadow: const [BoxShadow(blurRadius: 5, color: Colors.black26)],
                 ),
-                child: Row(
+                child: const Row(
                   children: [
                     Icon(Icons.add_circle_outline, size: 20),
                     SizedBox(width: 8),
@@ -76,60 +70,95 @@ class _UserHomePageState extends State<UserHomePage> {
           ),
 
           // ------------------------------------
-          // 3. Bottom List Sheet (Top Layer)
+          // 3. Bottom Sheet with buttons baked in
           // ------------------------------------
           DraggableScrollableSheet(
-            initialChildSize: 0.4, 
-            minChildSize: 0.2, 
-            maxChildSize: 0.9, 
+            initialChildSize: 0.4,
+            minChildSize: 0.2,
+            maxChildSize: 0.9,
             builder: (BuildContext context, ScrollController scrollController) {
               return Container(
-                decoration: BoxDecoration(
-                  color: Color(0xFFFFFBE6), 
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFFBE6),
                   borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
                   boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black26)],
                 ),
                 child: Column(
                   children: [
-                    // Handle bar
-                    SizedBox(height: 10),
-                    Container(
-                      width: 50,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
+                    // ── Buttons row + drag handle ──────────────────
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Row(
+                        children: [
+                          // Profile button (left)
+                          _MapFloatingButton(
+                            onTap: () => Navigator.pushNamed(context, '/profile'),
+                            child: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 22,
+                              color: Color(0xFF49454F),
+                            ),
+                          ),
+
+                          // Drag handle (center)
+                          Expanded(
+                            child: Center(
+                              child: Container(
+                                width: 50,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Navigation button (right)
+                          _MapFloatingButton(
+                            onTap: () {
+                              // TODO: center map on user location
+                            },
+                            child: const Icon(
+                              Icons.navigation_rounded,
+                              size: 22,
+                              color: Color(0xFF49454F),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    
-                    // Search Bar
+
+                    // ── Search Bar ─────────────────────────────────
                     Padding(
-                      padding: const EdgeInsets.all(20.0),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                       child: TextField(
                         decoration: InputDecoration(
                           hintText: "Search Maps",
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: const Icon(Icons.search),
                           filled: true,
-                          fillColor: Color(0xFFCDE8E5), 
+                          fillColor: const Color(0xFFCDE8E5),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(20),
                             borderSide: BorderSide.none,
                           ),
-                          contentPadding: EdgeInsets.symmetric(vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
                         ),
                       ),
                     ),
 
-                    // Restroom List
+                    const SizedBox(height: 8),
+
+                    // ── Restroom List ──────────────────────────────
                     Expanded(
                       child: ListView.separated(
-                        controller: scrollController, 
+                        controller: scrollController,
                         padding: EdgeInsets.zero,
                         itemCount: restrooms.length,
-                        separatorBuilder: (context, index) => Divider(color: Colors.grey[300]),
-                        itemBuilder: (context, index) {
-                          return _buildRestroomItem(restrooms[index]);
-                        },
+                        separatorBuilder: (context, index) =>
+                            Divider(color: Colors.grey[300]),
+                        itemBuilder: (context, index) =>
+                            _buildRestroomItem(restrooms[index]),
                       ),
                     ),
                   ],
@@ -143,13 +172,10 @@ class _UserHomePageState extends State<UserHomePage> {
   }
 
   Widget _buildRestroomItem(RestroomModel restroom) {
-    // Calculate if restroom is currently open
     final isOpen = RestroomService.isOpen(restroom);
-    final distance = RestroomService.getDistance(restroom.latitude, restroom.longitude);
 
     return InkWell(
       onTap: () {
-        // Navigate to detail page with restroom model
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -170,33 +196,33 @@ class _UserHomePageState extends State<UserHomePage> {
                 children: [
                   Text(
                     restroom.restroomName,
-                    style: TextStyle(
-                      fontFamily: 'Serif', 
+                    style: const TextStyle(
+                      fontFamily: 'Serif',
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     restroom.address,
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            
-            // Rating stars
+
+            // Rating
             Expanded(
               flex: 1,
               child: Row(
                 children: [
-                  Icon(Icons.star, color: Colors.orange, size: 16),
-                  SizedBox(width: 4),
+                  const Icon(Icons.star, color: Colors.orange, size: 16),
+                  const SizedBox(width: 4),
                   Text(
                     restroom.avgRating.toStringAsFixed(1),
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -212,9 +238,9 @@ class _UserHomePageState extends State<UserHomePage> {
                     restroom.isFree ? "Price : Free" : "Price : Paid",
                     style: TextStyle(color: Colors.red[300], fontSize: 12),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
-                    isOpen ? "Open" : "Closed", 
+                    isOpen ? "Open" : "Closed",
                     style: TextStyle(color: Colors.red[300], fontSize: 12),
                   ),
                 ],
@@ -222,6 +248,39 @@ class _UserHomePageState extends State<UserHomePage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Reusable floating circular button for the map
+// ─────────────────────────────────────────────
+class _MapFloatingButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final Widget child;
+
+  const _MapFloatingButton({required this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFCF9EA),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(child: child),
       ),
     );
   }
