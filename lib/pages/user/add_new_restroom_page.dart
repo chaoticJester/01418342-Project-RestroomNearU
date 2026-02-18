@@ -2,19 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // ─────────────────────────────────────────────
-// Design tokens (mirrors user_homepage.dart)
+// Design tokens - Figma inspired theme
 // ─────────────────────────────────────────────
 class _C {
-  static const bg         = Color(0xFFFCF9EA);
-  static const teal       = Color(0xFFBADFDB);
-  static const tealDark   = Color(0xFF7BBFBA);
-  static const coral      = Color(0xFFFFA4A4);
-  static const textDark   = Color(0xFF1C1B1F);
-  static const textMid    = Color(0xFF6B6874);
-  static const textLight  = Color(0xFFAEABB8);
-  static const divider    = Color(0xFFECE9DA);
-  static const fieldFill  = Color(0xFFF2EFE0);
-  static const cardBg     = Color(0xFFF7F4E6);
+  static const bg        = Color(0xFFF5F1E8);  // Warm cream background
+  static const card      = Color(0xFFFFFDFA);  // Lighter card surface
+  static const pink      = Color(0xFFEC9B9B);  // Soft pink accent
+  static const pinkLight = Color(0xFFF5D4D4);  // Light pink for backgrounds
+  static const mint      = Color(0xFFA8D5D5);  // Mint/teal accent
+  static const mintDark  = Color(0xFF88B5B5);  // Darker mint
+  static const orange    = Color(0xFFF5A162);  // Warm orange
+  static const textDark  = Color(0xFF2C2C2C);  // Near black
+  static const textMid   = Color(0xFF6B6B6B);  // Medium gray
+  static const textLight = Color(0xFFA5A5A5);  // Light gray
+  static const divider   = Color(0xFFE8E4DB);  // Soft divider
+  static const fieldFill = Color(0xFFFFFBF5);  // Input field background
 }
 
 class AddNewRestroomPage extends StatefulWidget {
@@ -94,7 +96,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(
-            primary: _C.tealDark,
+            primary: _C.mint,
             onPrimary: Colors.white,
             surface: _C.bg,
           ),
@@ -111,7 +113,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Submitting restroom…'),
-          backgroundColor: _C.tealDark,
+          backgroundColor: _C.mint,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
@@ -223,8 +225,12 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         Container(
           height: 220,
           width: double.infinity,
-          decoration: const BoxDecoration(
-            color: Color(0xFF7BBFBA),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [_C.mint, _C.mintDark],
+            ),
           ),
           child: Stack(
             children: [
@@ -327,9 +333,19 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       width: double.infinity,
       height: 148,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: _C.teal.withOpacity(0.2),
-        border: Border.all(color: _C.divider),
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [_C.pinkLight.withOpacity(0.4), _C.mint.withOpacity(0.15)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -339,20 +355,24 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             // Grid pattern for map-like appearance
             CustomPaint(size: const Size(double.infinity, 148), painter: _GridPainter()),
             Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: _C.tealDark,
+                gradient: LinearGradient(
+                  colors: [_C.pink, _C.pink.withOpacity(0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: _C.tealDark.withOpacity(0.4),
-                    blurRadius: 12,
-                    spreadRadius: 2,
+                    color: _C.pink.withOpacity(0.4),
+                    blurRadius: 16,
+                    spreadRadius: 3,
                   ),
                 ],
               ),
-              child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 24),
+              child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 26),
             ),
           ],
         ),
@@ -368,7 +388,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Getting current location…'),
-            backgroundColor: _C.tealDark,
+            backgroundColor: _C.mint,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
@@ -378,21 +398,32 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
-              color: _C.coral.withOpacity(0.15),
+              gradient: LinearGradient(
+                colors: [_C.orange.withOpacity(0.25), _C.orange.withOpacity(0.1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _C.orange.withOpacity(0.15),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: const Icon(Icons.my_location_rounded, size: 14, color: _C.coral),
+            child: const Icon(Icons.my_location_rounded, size: 15, color: _C.orange),
           ),
           const SizedBox(width: 8),
           const Text(
             'Use Current Location',
             style: TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _C.coral,
+              fontWeight: FontWeight.w700,
+              color: _C.orange,
             ),
           ),
         ],
@@ -418,7 +449,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         hintStyle: const TextStyle(fontSize: 13, color: _C.textLight),
         prefixIcon: Padding(
           padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(icon, size: 18, color: _C.tealDark),
+          child: Icon(icon, size: 18, color: _C.mint),
         ),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         filled: true,
@@ -428,16 +459,16 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _C.divider, width: 1),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _C.tealDark, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _C.mint, width: 2),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _C.coral, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _C.pink, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
@@ -453,7 +484,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
           icon: Icons.money_off_rounded,
           selected: isFree,
           onTap: () => setState(() => isFree = true),
-          activeColor: _C.tealDark,
+          activeColor: _C.mint,
         ),
         const SizedBox(width: 12),
         _toggleChip(
@@ -461,7 +492,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
           icon: Icons.paid_rounded,
           selected: !isFree,
           onTap: () => setState(() => isFree = false),
-          activeColor: _C.coral,
+          activeColor: _C.pink,
         ),
       ],
     );
@@ -482,14 +513,26 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
         decoration: BoxDecoration(
-          color: selected ? activeColor.withOpacity(0.15) : _C.fieldFill,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? activeColor : _C.divider,
-            width: selected ? 1.5 : 1,
-          ),
+          gradient: selected
+              ? LinearGradient(
+                  colors: [activeColor.withOpacity(0.22), activeColor.withOpacity(0.08)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: selected ? null : _C.fieldFill,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: activeColor.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -525,11 +568,27 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 44,
-                height: 24,
+                width: 46,
+                height: 26,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(99),
-                  color: is24Hours ? _C.tealDark : _C.divider,
+                  gradient: is24Hours
+                      ? LinearGradient(
+                          colors: [_C.mint, _C.mintDark],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        )
+                      : null,
+                  color: is24Hours ? null : _C.divider,
+                  boxShadow: is24Hours
+                      ? [
+                          BoxShadow(
+                            color: _C.mint.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: AnimatedAlign(
                   duration: const Duration(milliseconds: 200),
@@ -551,8 +610,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                 'Open 24 hours',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: is24Hours ? _C.tealDark : _C.textMid,
+                  fontWeight: FontWeight.w700,
+                  color: is24Hours ? _C.mint : _C.textMid,
                 ),
               ),
             ],
@@ -587,12 +646,18 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: _C.fieldFill,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _C.divider),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            Icon(Icons.access_time_rounded, size: 16, color: _C.tealDark),
+            Icon(Icons.access_time_rounded, size: 16, color: _C.mint),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,19 +706,31 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             curve: Curves.easeOut,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: value ? _C.teal.withOpacity(0.2) : _C.fieldFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: value ? _C.tealDark.withOpacity(0.4) : _C.divider,
-                width: value ? 1.5 : 1,
-              ),
+              gradient: value
+                  ? LinearGradient(
+                      colors: [_C.pinkLight, _C.pink.withOpacity(0.15)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              color: value ? null : _C.fieldFill,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: value
+                  ? [
+                      BoxShadow(
+                        color: _C.pink.withOpacity(0.15),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
             ),
             child: Row(
               children: [
                 Icon(
                   icon,
                   size: 16,
-                  color: value ? _C.tealDark : _C.textLight,
+                  color: value ? _C.pink : _C.textLight,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -669,7 +746,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                   ),
                 ),
                 if (value)
-                  const Icon(Icons.check_rounded, size: 13, color: _C.tealDark),
+                  const Icon(Icons.check_rounded, size: 14, color: _C.pink),
               ],
             ),
           ),
@@ -689,7 +766,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text('Opening camera/gallery…'),
-                backgroundColor: _C.tealDark,
+                backgroundColor: _C.mint,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
@@ -700,16 +777,26 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: _C.fieldFill,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _C.divider, width: 1.5),
+              gradient: LinearGradient(
+                colors: [_C.mint.withOpacity(0.15), _C.mint.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _C.mint.withOpacity(0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: const [
-                Icon(Icons.add_photo_alternate_rounded, size: 24, color: _C.tealDark),
+                Icon(Icons.add_photo_alternate_rounded, size: 26, color: _C.mint),
                 SizedBox(height: 4),
-                Text('Add', style: TextStyle(fontSize: 10, color: _C.textMid)),
+                Text('Add', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _C.mint)),
               ],
             ),
           ),
@@ -722,8 +809,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: _C.teal.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+              color: _C.pinkLight.withOpacity(0.3),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
@@ -741,15 +828,19 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       onTap: _submitForm,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 17),
         decoration: BoxDecoration(
-          color: _C.tealDark,
-          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [_C.mint, _C.mintDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: _C.tealDark.withOpacity(0.35),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+              color: _C.mint.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -827,7 +918,7 @@ class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFBADFDB).withOpacity(0.35)
+      ..color = const Color(0xFFA8D5D5).withOpacity(0.25)
       ..strokeWidth = 1;
     const step = 28.0;
     for (double x = 0; x < size.width; x += step) {
