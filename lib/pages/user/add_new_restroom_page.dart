@@ -1,4 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+// ─────────────────────────────────────────────
+// Design tokens (mirrors user_homepage.dart)
+// ─────────────────────────────────────────────
+class _C {
+  static const bg         = Color(0xFFFCF9EA);
+  static const teal       = Color(0xFFBADFDB);
+  static const tealDark   = Color(0xFF7BBFBA);
+  static const coral      = Color(0xFFFFA4A4);
+  static const textDark   = Color(0xFF1C1B1F);
+  static const textMid    = Color(0xFF6B6874);
+  static const textLight  = Color(0xFFAEABB8);
+  static const divider    = Color(0xFFECE9DA);
+  static const fieldFill  = Color(0xFFF2EFE0);
+  static const cardBg     = Color(0xFFF7F4E6);
+}
 
 class AddNewRestroomPage extends StatefulWidget {
   const AddNewRestroomPage({Key? key}) : super(key: key);
@@ -7,671 +24,190 @@ class AddNewRestroomPage extends StatefulWidget {
   State<AddNewRestroomPage> createState() => _AddNewRestroomPageState();
 }
 
-class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
+class _AddNewRestroomPageState extends State<AddNewRestroomPage>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _nameController    = TextEditingController();
   final _locationController = TextEditingController();
-  final _phoneController = TextEditingController();
-  
-  bool isFree = true;
-  bool isPaid = false;
-  bool is24Hours = true;
+  final _phoneController   = TextEditingController();
+
+  bool isFree     = true;
+  bool is24Hours  = true;
   TimeOfDay? openTime;
   TimeOfDay? closeTime;
-  
+
   // Amenities
-  bool hasToiletPaper = true;
-  bool hasSoap = true;
-  bool hasWarmWater = true;
-  bool hasWifi = true;
-  bool hasElectricOutlet = true;
-  bool isWheelchairAccessible = true;
-  
+  final Map<String, bool> _amenities = {
+    'Toilet Paper':          true,
+    'Soap':                  true,
+    'Hand Dryer':            false,
+    'Wheelchair Accessible': true,
+    'Baby Changing Station': false,
+    'Hot Water':             true,
+    'WiFi':                  true,
+    'Power Outlet':          true,
+  };
+
+  final Map<String, IconData> _amenityIcons = {
+    'Toilet Paper':          Icons.dry_cleaning_rounded,
+    'Soap':                  Icons.soap_rounded,
+    'Hand Dryer':            Icons.air_rounded,
+    'Wheelchair Accessible': Icons.accessible_rounded,
+    'Baby Changing Station': Icons.child_care_rounded,
+    'Hot Water':             Icons.water_drop_rounded,
+    'WiFi':                  Icons.wifi_rounded,
+    'Power Outlet':          Icons.electric_bolt_rounded,
+  };
+
   List<String> photoUrls = [];
+
+  // Entry animation
+  late AnimationController _enterCtrl;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _enterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..forward();
+    _fadeAnim  = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
+  }
 
   @override
   void dispose() {
+    _enterCtrl.dispose();
     _nameController.dispose();
     _locationController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
 
-  Future<void> _selectTime(BuildContext context, bool isOpenTime) async {
-    final TimeOfDay? picked = await showTimePicker(
+  Future<void> _selectTime(bool isOpen) async {
+    final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: _C.tealDark,
+            onPrimary: Colors.white,
+            surface: _C.bg,
+          ),
+        ),
+        child: child!,
+      ),
     );
-    if (picked != null) {
-      setState(() {
-        if (isOpenTime) {
-          openTime = picked;
-        } else {
-          closeTime = picked;
-        }
-      });
-    }
-  }
-
-  void _useCurrentLocation() {
-    // TODO: Implement location picker with geolocator
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Getting current location...')),
-    );
-  }
-
-  void _addPhoto() {
-    // TODO: Implement image picker
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Opening camera/gallery...')),
-    );
+    if (picked != null) setState(() => isOpen ? openTime = picked : closeTime = picked);
   }
 
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
-      // TODO: Implement form submission to Firebase Firestore
+      HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Submitting restroom data...')),
+        SnackBar(
+          content: const Text('Submitting restroom…'),
+          backgroundColor: _C.tealDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFCF9EA),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header with animated back button
-                  Row(
-                    children: [
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(context),
-                          borderRadius: BorderRadius.circular(20),
-                          splashColor: Colors.black.withOpacity(0.1),
-                          highlightColor: Colors.black.withOpacity(0.05),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black, width: 1),
-                            ),
-                            child: const Icon(
-                              Icons.arrow_back,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Add New Restroom',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: _C.bg,
+        body: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: [
+                // ── Hero header ────────────────────────────
+                SliverToBoxAdapter(child: _buildHeroHeader(context)),
 
-                  // Location In Map
-                  const Text(
-                    'Location In Map',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  
-                  // Map Preview (Placeholder)
-                  Container(
-                    width: double.infinity,
-                    height: 152,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      color: Colors.grey[300],
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.map, size: 48, color: Colors.grey),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Use Current Location with hover effect
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _useCurrentLocation,
-                      borderRadius: BorderRadius.circular(8),
-                      splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
-                      highlightColor: const Color(0xFFFFA4A4).withOpacity(0.1),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.location_pin, color: Color(0xFFFFA4A4), size: 24),
-                            SizedBox(width: 3),
-                            Text(
-                              'Use Current Location',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFFFFA4A4),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Name Field
-                  const Text(
-                    'Name',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. 2nd Floor Engineering Building Restroom',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.withOpacity(0.8),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Location Field
-                  const Text(
-                    'Location',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _locationController,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. 2nd Floor Engineering Building Restroom',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.withOpacity(0.8),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Price
-                  const Text(
-                    'Price',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // Free Checkbox with ripple effect
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              isFree = true;
-                              isPaid = false;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                            child: Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 14,
-                                  height: 14,
-                                  decoration: BoxDecoration(
-                                    color: isFree ? const Color(0xFFFFA4A4) : Colors.white,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: isFree ? const Color(0xFFFFA4A4) : Colors.black,
-                                    ),
-                                  ),
-                                  child: isFree
-                                      ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                      : null,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Free',
-                                  style: TextStyle(fontSize: 13, color: Colors.black),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      // Paid Checkbox with ripple effect
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              isFree = false;
-                              isPaid = true;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          splashColor: const Color(0xFF2C2C2C).withOpacity(0.2),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                            child: Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 14,
-                                  height: 14,
-                                  decoration: BoxDecoration(
-                                    color: isPaid ? const Color(0xFF2C2C2C) : Colors.white,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: Colors.black),
-                                  ),
-                                  child: isPaid
-                                      ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                      : null,
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Paid',
-                                  style: TextStyle(fontSize: 13, color: Colors.black),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Open/Close Time
-                  const Text(
-                    'Open/Close Time',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // Open Time with hover effect
-                      Expanded(
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _selectTime(context, true),
-                            borderRadius: BorderRadius.circular(8),
-                            splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
-                            child: Container(
-                              height: 32,
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFFD9D9D9)),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    openTime?.format(context) ?? '--:--',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.access_time, size: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 9),
-                      // Close Time with hover effect
-                      Expanded(
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _selectTime(context, false),
-                            borderRadius: BorderRadius.circular(8),
-                            splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
-                            child: Container(
-                              height: 32,
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFFD9D9D9)),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    closeTime?.format(context) ?? '--:--',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.access_time, size: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 24 Hrs Checkbox with ripple effect
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          is24Hours = !is24Hours;
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: is24Hours ? const Color(0xFFFFA4A4) : Colors.white,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: is24Hours ? const Color(0xFFFFA4A4) : Colors.black,
-                                ),
-                              ),
-                              child: is24Hours
-                                  ? const Icon(Icons.check, size: 10, color: Colors.white)
-                                  : null,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '24 Hrs',
-                              style: TextStyle(fontSize: 13, color: Colors.black),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Phone Number
-                  const Text(
-                    'Phone Number',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration: InputDecoration(
-                      hintText: '02-123-4567',
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.withOpacity(0.8),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFFFA4A4), width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    style: const TextStyle(fontSize: 13),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Amenities
-                  const Text(
-                    'Amenities',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Amenities Grid
-                  Column(
-                    children: [
-                      Row(
+                // ── Form body ──────────────────────────────
+                SliverToBoxAdapter(
+                  child: Form(
+                    key: _formKey,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'Toilet paper',
-                              hasToiletPaper,
-                              (value) => setState(() => hasToiletPaper = value),
-                            ),
+                          _sectionLabel('Location on Map'),
+                          const SizedBox(height: 10),
+                          _mapPreview(),
+                          const SizedBox(height: 8),
+                          _useLocationButton(),
+                          const SizedBox(height: 24),
+
+                          _sectionLabel('Restroom Name'),
+                          const SizedBox(height: 10),
+                          _styledField(
+                            controller: _nameController,
+                            hint: 'e.g. 2nd Floor Engineering Building',
+                            icon: Icons.wc_rounded,
+                            validator: (v) =>
+                                v == null || v.isEmpty ? 'Please enter a name' : null,
                           ),
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'WiFi',
-                              hasWifi,
-                              (value) => setState(() => hasWifi = value),
-                            ),
+                          const SizedBox(height: 20),
+
+                          _sectionLabel('Address'),
+                          const SizedBox(height: 10),
+                          _styledField(
+                            controller: _locationController,
+                            hint: 'e.g. Kasetsart University, Bangkok',
+                            icon: Icons.location_on_rounded,
                           ),
+                          const SizedBox(height: 20),
+
+                          _sectionLabel('Phone Number'),
+                          const SizedBox(height: 10),
+                          _styledField(
+                            controller: _phoneController,
+                            hint: '02-123-4567',
+                            icon: Icons.phone_rounded,
+                            keyboardType: TextInputType.phone,
+                          ),
+                          const SizedBox(height: 24),
+
+                          _sectionLabel('Price'),
+                          const SizedBox(height: 12),
+                          _priceToggle(),
+                          const SizedBox(height: 24),
+
+                          _sectionLabel('Opening Hours'),
+                          const SizedBox(height: 12),
+                          _hoursSection(context),
+                          const SizedBox(height: 24),
+
+                          _sectionLabel('Amenities'),
+                          const SizedBox(height: 12),
+                          _amenitiesGrid(),
+                          const SizedBox(height: 24),
+
+                          _sectionLabel('Photos'),
+                          const SizedBox(height: 12),
+                          _photoRow(),
+                          const SizedBox(height: 36),
+
+                          _submitButton(),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'Soap',
-                              hasSoap,
-                              (value) => setState(() => hasSoap = value),
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'Electric OutLet',
-                              hasElectricOutlet,
-                              (value) => setState(() => hasElectricOutlet = value),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'Warm Water',
-                              hasWarmWater,
-                              (value) => setState(() => hasWarmWater = value),
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildAmenityCheckbox(
-                              'Wheelchair Accessible',
-                              isWheelchairAccessible,
-                              (value) => setState(() => isWheelchairAccessible = value),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Photo
-                  const Text(
-                    'Photo',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      // Add Photo Button with hover effect
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _addPhoto,
-                          borderRadius: BorderRadius.circular(6),
-                          splashColor: const Color(0xFFBADFDB).withOpacity(0.3),
-                          child: Container(
-                            width: 68,
-                            height: 45,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: const Color(0xFFD9D9D9).withOpacity(0.87),
-                                style: BorderStyle.solid,
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              size: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 15),
-                      // Photo Preview (if available)
-                      if (photoUrls.isNotEmpty)
-                        Container(
-                          width: 68,
-                          height: 45,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.grey[300],
-                          ),
-                          child: const Icon(Icons.image, color: Colors.grey),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Submit Button with enhanced hover effect
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _submitForm,
-                        borderRadius: BorderRadius.circular(8),
-                        splashColor: const Color(0xFF8BC9C3),
-                        highlightColor: const Color(0xFFA8D8D3),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 29, vertical: 11),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFBADFDB),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFD9D9D9)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            'Submit',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -679,43 +215,629 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage> {
     );
   }
 
-  Widget _buildAmenityCheckbox(String label, bool value, Function(bool) onChanged) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onChanged(!value),
-        borderRadius: BorderRadius.circular(8),
-        splashColor: const Color(0xFFFFA4A4).withOpacity(0.2),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-          child: Row(
+  // ── Hero header with back button ──────────────────────────────────────
+  Widget _buildHeroHeader(BuildContext context) {
+    return Stack(
+      children: [
+        // Background image placeholder
+        Container(
+          height: 220,
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            color: Color(0xFF7BBFBA),
+          ),
+          child: Stack(
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: value ? const Color(0xFFFFA4A4) : Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: value ? const Color(0xFFFFA4A4) : Colors.black,
-                  ),
-                ),
-                child: value
-                    ? const Icon(Icons.check, size: 10, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(fontSize: 13, color: Colors.black),
+              // Center icon
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.add_location_alt_rounded,
+                        size: 36,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Add New Restroom',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Help others find clean restrooms nearby',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
+
+        // ── Back button — same style as RestroomDetailPage ──
+        Positioned(
+          top: 40,
+          left: 6,
+          child: SafeArea(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.pop(context);
+                },
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.arrow_back, size: 24, color: _C.textDark),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Section label ─────────────────────────────────────────────────────
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+        color: _C.textDark,
+        letterSpacing: 0.2,
       ),
     );
   }
+
+  // ── Map preview ───────────────────────────────────────────────────────
+  Widget _mapPreview() {
+    return Container(
+      width: double.infinity,
+      height: 148,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: _C.teal.withOpacity(0.2),
+        border: Border.all(color: _C.divider),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Grid pattern for map-like appearance
+            CustomPaint(size: const Size(double.infinity, 148), painter: _GridPainter()),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _C.tealDark,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: _C.tealDark.withOpacity(0.4),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 24),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Use current location button ───────────────────────────────────────
+  Widget _useLocationButton() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Getting current location…'),
+            backgroundColor: _C.tealDark,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: _C.coral.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.my_location_rounded, size: 14, color: _C.coral),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Use Current Location',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _C.coral,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Styled text field ─────────────────────────────────────────────────
+  Widget _styledField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(fontSize: 14, color: _C.textDark),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(fontSize: 13, color: _C.textLight),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 14, right: 10),
+          child: Icon(icon, size: 18, color: _C.tealDark),
+        ),
+        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+        filled: true,
+        fillColor: _C.fieldFill,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _C.divider, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _C.tealDark, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _C.coral, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
+  }
+
+  // ── Price toggle ──────────────────────────────────────────────────────
+  Widget _priceToggle() {
+    return Row(
+      children: [
+        _toggleChip(
+          label: 'Free',
+          icon: Icons.money_off_rounded,
+          selected: isFree,
+          onTap: () => setState(() => isFree = true),
+          activeColor: _C.tealDark,
+        ),
+        const SizedBox(width: 12),
+        _toggleChip(
+          label: 'Paid',
+          icon: Icons.paid_rounded,
+          selected: !isFree,
+          onTap: () => setState(() => isFree = false),
+          activeColor: _C.coral,
+        ),
+      ],
+    );
+  }
+
+  Widget _toggleChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+    required Color activeColor,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? activeColor.withOpacity(0.15) : _C.fieldFill,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? activeColor : _C.divider,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: selected ? activeColor : _C.textLight),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? activeColor : _C.textMid,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Hours section ─────────────────────────────────────────────────────
+  Widget _hoursSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 24 hrs toggle
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => is24Hours = !is24Hours);
+          },
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 44,
+                height: 24,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(99),
+                  color: is24Hours ? _C.tealDark : _C.divider,
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  alignment: is24Hours ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.all(3),
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Open 24 hours',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: is24Hours ? _C.tealDark : _C.textMid,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Open / Close time pickers
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          child: is24Hours
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Row(
+                    children: [
+                      Expanded(child: _timePicker('Open', openTime, () => _selectTime(true))),
+                      const SizedBox(width: 12),
+                      Expanded(child: _timePicker('Close', closeTime, () => _selectTime(false))),
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timePicker(String label, TimeOfDay? time, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _C.fieldFill,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _C.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.access_time_rounded, size: 16, color: _C.tealDark),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(fontSize: 10, color: _C.textLight)),
+                Text(
+                  time?.format(context) ?? '--:--',
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _C.textDark),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Amenities grid ────────────────────────────────────────────────────
+  Widget _amenitiesGrid() {
+    final entries = _amenities.entries.toList();
+    return GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: true,
+      itemCount: entries.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 3.0,
+      ),
+      itemBuilder: (context, i) {
+        final key   = entries[i].key;
+        final value = entries[i].value;
+        final icon  = _amenityIcons[key] ?? Icons.check_circle_rounded;
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _amenities[key] = !value);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: value ? _C.teal.withOpacity(0.2) : _C.fieldFill,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: value ? _C.tealDark.withOpacity(0.4) : _C.divider,
+                width: value ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: value ? _C.tealDark : _C.textLight,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    key,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: value ? _C.textDark : _C.textLight,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (value)
+                  const Icon(Icons.check_rounded, size: 13, color: _C.tealDark),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Photo row ─────────────────────────────────────────────────────────
+  Widget _photoRow() {
+    return Row(
+      children: [
+        // Add photo button
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Opening camera/gallery…'),
+                backgroundColor: _C.tealDark,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          },
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: _C.fieldFill,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _C.divider, width: 1.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.add_photo_alternate_rounded, size: 24, color: _C.tealDark),
+                SizedBox(height: 4),
+                Text('Add', style: TextStyle(fontSize: 10, color: _C.textMid)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        // Photo previews
+        ...photoUrls.take(4).map((url) => Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: _C.teal.withOpacity(0.2),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.network(url, fit: BoxFit.cover),
+            ),
+          ),
+        )),
+      ],
+    );
+  }
+
+  // ── Submit button ─────────────────────────────────────────────────────
+  Widget _submitButton() {
+    return _SpringButton(
+      onTap: _submitForm,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: _C.tealDark,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: _C.tealDark.withOpacity(0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text(
+            'Submit Restroom',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Spring press button wrapper
+// ─────────────────────────────────────────────
+class _SpringButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _SpringButton({required this.child, required this.onTap});
+
+  @override
+  State<_SpringButton> createState() => _SpringButtonState();
+}
+
+class _SpringButtonState extends State<_SpringButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _scale = Tween(begin: 1.0, end: 0.96).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeIn),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
+      onTapCancel: () => _ctrl.reverse(),
+      child: AnimatedBuilder(
+        animation: _scale,
+        builder: (_, child) => Transform.scale(scale: _scale.value, child: child),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Map grid painter (decorative)
+// ─────────────────────────────────────────────
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFBADFDB).withOpacity(0.35)
+      ..strokeWidth = 1;
+    const step = 28.0;
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
 }
