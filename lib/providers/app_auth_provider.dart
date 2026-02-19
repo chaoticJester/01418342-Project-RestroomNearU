@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart' ;
 import 'package:restroom_near_u/services/user_firestore.dart'; 
 import 'package:restroom_near_u/models/user_model.dart';
-import 'package:restroom_near_u/pages/user/user_homepage.dart';
 
 class AppAuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
