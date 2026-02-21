@@ -9,6 +9,10 @@ import 'package:restroom_near_u/pages/user/user_homepage.dart';
 import 'package:restroom_near_u/pages/user/profile_page.dart';
 import 'package:restroom_near_u/pages/user/add_new_restroom_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_homepage.dart';
+import 'package:restroom_near_u/pages/admin/admin_request_page.dart';
+import 'package:restroom_near_u/pages/admin/admin_report_page.dart';
+import 'package:restroom_near_u/pages/admin/admin_total_toilets_page.dart';
+import 'package:restroom_near_u/pages/admin/admin_profile_page.dart';
 import 'package:provider/provider.dart';
 import 'package:restroom_near_u/providers/app_auth_provider.dart';
 
@@ -40,6 +44,10 @@ class MyApp extends StatelessWidget {
         '/add_new_restroom': (context) => const AddNewRestroomPage(),
         '/profile': (context) => const ProfilePage(),
         '/admin_homepage': (context) => AdminHomePage(),
+        '/admin_requests': (context) => const AdminRequestPage(),
+        '/admin_reports': (context) => const AdminReportPage(),
+        '/admin_toilets': (context) => const AdminTotalToiletsPage(),
+        '/admin_profile': (context) => const AdminProfilePage(),
       }, 
       home: StreamBuilder<User?>(
         // Login หรือยัง?
@@ -54,22 +62,21 @@ class MyApp extends StatelessWidget {
           if(authSnapshot.hasData) {
             final User firebaseUser = authSnapshot.data!;
 
-            // เช็ค Role
-            return FutureBuilder<UserModel?>(
-              future: UserService().getUserById(firebaseUser.uid), 
+            // ใช้ StreamBuilder แทน FutureBuilder
+            // เพื่อให้ react ทันทีที่ Firestore document ถูกสร้าง
+            return StreamBuilder<UserModel?>(
+              stream: UserService().getUserStream(firebaseUser.uid),
               builder: (context, userSnapshot) {
-                // ดึงข้อมูลจาก Firestore
+                // ยังโหลดอยู่
                 if(userSnapshot.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
 
-                // ได้ข้อมูลมาแล้ว
+                // ได้ข้อมูลมาแล้ว → ส่งไปตาม role
                 if(userSnapshot.hasData && userSnapshot.data != null) {
                   final UserModel userModel = userSnapshot.data!;
-
-                  // ส่งไปตาม role
                   if(userModel.role == Role.admin) {
                     return const AdminHomePage();
                   } else {
@@ -77,7 +84,11 @@ class MyApp extends StatelessWidget {
                   }
                 }
 
-                return const UserHomePage();
+                // Document ยังไม่มี → แสดง loading รอ
+                // (อาจเกิดระหว่าง register ก่อน Firestore doc จะถูกสร้าง)
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
               }
             );
           }
