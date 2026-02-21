@@ -56,7 +56,18 @@ class UserService {
     });
   }
 
-  // 2. ดึงข้อมูล User อื่น (เช่น ดูโปรไฟล์คนรีวิว)
+  // 2. Stream ข้อมูล User ตาม UID (ใช้ใน main.dart แทน FutureBuilder)
+  // จะ emit ทันทีที่ document ถูกสร้าง ไม่ต้อง signOut เมื่อยังไม่มี doc
+  Stream<UserModel?> getUserStream(String userId) {
+    return _userCollection.doc(userId).snapshots().map((doc) {
+      if (doc.exists && doc.data() != null) {
+        return UserModel.fromMap(doc.data() as Map<String, dynamic>);
+      }
+      return null;
+    });
+  }
+
+  // 3. ดึงข้อมูล User อื่น (เช่น ดูโปรไฟล์คนรีวิว)
   Future<UserModel?> getUserById(String userId) async {
     try {
       final doc = await _userCollection.doc(userId).get();
