@@ -22,43 +22,62 @@ class AppAuthProvider extends ChangeNotifier {
     try {
       _setLoading(true);
       
-      // สร้างบัญชีใน Firebase Auth
+      // 1. สร้างบัญชีใน Firebase Auth
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email, 
         password: password
       );
 
-      final user = userCredential.user;
+      // 2. ดึง user จาก _auth.currentUser แทน userCredential.user
+      //    เพื่อให้ได้ instance ที่ fresh และ auth session พร้อมแน่นอน
+      final user = _auth.currentUser;
 
-      if(user != null) {
-        await user.updateDisplayName(name);
-        
-        final newUser = UserModel(
-          userId: user.uid,
-          displayName: name,
-          email: email,
-          role: Role.user,
-          totalReviews: 0,
-          reviewIds: []
-        );
-
-        await _userService.createNewUser(newUser);
+      if (user == null) {
+        _showError(context, "Registration failed. Please try again.");
+        return;
       }
 
+      // 3. อัปเดต display name
+      await user.updateDisplayName(name);
+
+      // 4. Force token refresh และ reload user ก่อนเขียน Firestore
+      await user.getIdToken(true);
+      await user.reload();
+      
+      // รอให้ auth state propagate อย่างสมบูรณ์
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // 5. สร้าง Firestore document
+      final newUser = UserModel(
+        userId: user.uid,
+        displayName: name,
+        email: email,
+        role: Role.user,
+        totalReviews: 0,
+        reviewIds: [],
+      );
+      
+      try {
+        await _userService.createNewUser(newUser);
+      } catch (firestoreError) {
+        // ถ้า Firestore write ล้มเหลว ให้ลบ Auth account ที่สร้างไว้
+        await user.delete();
+        throw Exception("Failed to create user profile. Please try again.");
+      }
+
+      // 6. ปิดหน้า register — main.dart StreamBuilder จะพาไปหน้า Home เอง
       if (context.mounted) {
-        Navigator.pop(context); 
+        Navigator.pop(context);
       }
 
     } on FirebaseAuthException catch (e) {
-      // ดักจับ Error แจ้งเตือนผู้ใช้ เช่น รหัสสั้นไป, อีเมลซ้ำ
-      String message = "Error occured: ${e.message}";
+      String message = "Error occurred: ${e.message}";
       if (e.code == 'weak-password') message = "Password must have at least 6 characters.";
       if (e.code == 'email-already-in-use') message = "This email is already used.";
-      
       _showError(context, message);
     } catch (e) { 
-      _showError(context, "System Error: ${e.toString()}");
-      print("System Error: $e");
+      _showError(context, "Error: ${e.toString()}");
+      print("Register error: $e");
     } finally {
       _setLoading(false);
     }
