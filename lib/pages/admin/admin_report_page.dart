@@ -1,5 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// ─────────────────────────────────────────────
+// Design tokens
+// ─────────────────────────────────────────────
+class _C {
+  static const bg        = Color(0xFFFCF9EA);
+  static const card      = Color(0xFFF7F4E6);
+  static const teal      = Color(0xFFBADFDB);
+  static const tealDark  = Color(0xFF7BBFBA);
+  static const orange    = Color(0xFFE8753D);
+  static const green     = Color(0xFF34A853);
+  static const red       = Color(0xFFB3261E);
+  static const redLight  = Color(0xFFEF4444);
+  static const yellow    = Color(0xFFF0A500);
+  static const textDark  = Color(0xFF1C1B1F);
+  static const textMid   = Color(0xFF6B6874);
+  static const textLight = Color(0xFFAEABB8);
+  static const divider   = Color(0xFFECE9DA);
+  static const fieldFill = Color(0xFFEEEBDA);
+}
 
 class AdminReportPage extends StatefulWidget {
   const AdminReportPage({super.key});
@@ -8,72 +29,100 @@ class AdminReportPage extends StatefulWidget {
   State<AdminReportPage> createState() => _AdminReportPageState();
 }
 
-class _AdminReportPageState extends State<AdminReportPage> {
+class _AdminReportPageState extends State<AdminReportPage>
+    with SingleTickerProviderStateMixin {
   String _selectedFilter = 'All';
+
+  late AnimationController _enterCtrl;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _enterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..forward();
+    _fadeAnim = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
+  }
+
+  @override
+  void dispose() {
+    _enterCtrl.dispose();
+    super.dispose();
+  }
 
   Stream<List<Map<String, dynamic>>> _getReportsStream() {
     Query query = FirebaseFirestore.instance
         .collection('reports')
         .orderBy('createdAt', descending: true);
-
     if (_selectedFilter == 'Reviewed') {
       query = query.where('reviewed', isEqualTo: true);
     } else if (_selectedFilter == 'Pending') {
       query = query.where('reviewed', isEqualTo: false);
     }
-
     return query.snapshots().map((snap) => snap.docs
-        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
+        .map((doc) =>
+            {'id': doc.id, ...doc.data() as Map<String, dynamic>})
         .toList());
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFCF9EA),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(context),
-            const SizedBox(height: 12),
-            Expanded(child: _buildReportList()),
-          ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: _C.bg,
+        body: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
+                const SizedBox(height: 12),
+                Expanded(child: _buildReportList()),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  // ─── Header ──────────────────────────────────────────────────────────────
+  // ── Header ────────────────────────────────────────────────────────────
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 16, 16, 0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.arrow_back, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Report Management',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black),
+          Row(
+            children: [
+              _BackButton(onTap: () => Navigator.pop(context)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Report Management',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: _C.textDark),
+                    ),
+                    Text(
+                      'Review and manage user reports',
+                      style:
+                          TextStyle(fontSize: 12, color: _C.textMid),
+                    ),
+                  ],
                 ),
-                Text(
-                  '6 reports to review',
-                  style: TextStyle(fontSize: 11, color: Colors.black54),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 14),
           _buildFilterTabs(),
         ],
       ),
@@ -85,25 +134,41 @@ class _AdminReportPageState extends State<AdminReportPage> {
     return Row(
       children: filters.map((f) {
         final isSelected = _selectedFilter == f;
+        Color chipColor;
+        if (f == 'Reviewed') chipColor = _C.green;
+        else if (f == 'Pending') chipColor = _C.orange;
+        else chipColor = _C.tealDark;
+
         return GestureDetector(
-          onTap: () => setState(() => _selectedFilter = f),
-          child: Container(
-            margin: const EdgeInsets.only(left: 8),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _selectedFilter = f);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(right: 8),
             padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? Colors.black.withOpacity(0.1)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(5),
+              color: isSelected ? chipColor : Colors.white.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: isSelected ? chipColor : _C.divider, width: 1),
+              boxShadow: [
+                BoxShadow(
+                    color: isSelected
+                        ? chipColor.withOpacity(0.3)
+                        : Colors.black.withOpacity(0.05),
+                    blurRadius: isSelected ? 8 : 4,
+                    offset: const Offset(0, 2)),
+              ],
             ),
             child: Text(
-              f == 'All' ? 'All' : f,
+              f,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight:
-                    isSelected ? FontWeight.w700 : FontWeight.w600,
-                color: Colors.black,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? Colors.white : _C.textMid,
               ),
             ),
           ),
@@ -112,277 +177,76 @@ class _AdminReportPageState extends State<AdminReportPage> {
     );
   }
 
-  // ─── Report List ──────────────────────────────────────────────────────────
+  // ── Report List ───────────────────────────────────────────────────────
   Widget _buildReportList() {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _getReportsStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+              child: CircularProgressIndicator(color: _C.tealDark));
         }
 
         final reports = snapshot.data ?? [];
-
         if (reports.isEmpty) {
-          return const Center(
-            child: Text('No reports found.',
-                style: TextStyle(color: Colors.black54)),
-          );
+          return _buildEmptyState();
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
           itemCount: reports.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, index) =>
-              _buildReportCard(context, reports[index]),
+              _ReportCard(
+                report: reports[index],
+                onTap: () =>
+                    _showReportDetail(context, reports[index]),
+              ),
         );
       },
     );
   }
 
-  // ─── Report Card ──────────────────────────────────────────────────────────
-  Widget _buildReportCard(
-      BuildContext context, Map<String, dynamic> report) {
-    final reportId = report['id'] ?? '';
-    final title = report['title'] ?? 'Fake Restroom Location';
-    final reportedByName = report['reportedByName'] ?? 'Unknown';
-    final description = report['description'] ?? '';
-    final severity = report['severity'] ?? 'low'; // low / medium / high
-    final reviewed = report['reviewed'] ?? false;
-    final photoCount = (report['photos'] as List?)?.length ?? 0;
-    final createdAt = report['createdAt'];
-    final restroomName = report['restroomName'] ?? '';
-
-    String formattedDate = '';
-    if (createdAt != null && createdAt is Timestamp) {
-      final dt = createdAt.toDate();
-      formattedDate =
-          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-          '${dt.hour.toString().padLeft(2, '0')}.${dt.minute.toString().padLeft(2, '0')}';
-    }
-
-    return GestureDetector(
-      onTap: () => _showReportDetail(context, report),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFFCF9EA),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: _C.teal.withOpacity(0.2),
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top row: Flag icon + Report ID + severity badge + attachment
-            Row(
-              children: [
-                Icon(
-                  Icons.flag,
-                  size: 15,
-                  color: _severityIconColor(severity),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Report ID : $reportId',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black),
-                  ),
-                ),
-                _buildSeverityBadge(severity),
-                const SizedBox(width: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.attach_file,
-                        size: 12, color: Colors.black45),
-                    const SizedBox(width: 2),
-                    Text(
-                      '$photoCount',
-                      style: const TextStyle(
-                          fontSize: 9, color: Colors.black54),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Restroom / Location
-            if (restroomName.isNotEmpty) ...[
-              Row(
-                children: [
-                  const Icon(Icons.location_on_outlined,
-                      size: 10, color: Colors.black54),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      restroomName,
-                      style: const TextStyle(
-                          fontSize: 9, color: Colors.black87),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-            ],
-
-            // Title / issue
-            Row(
-              children: [
-                const Icon(Icons.flag_outlined,
-                    size: 10, color: Colors.black54),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    title,
-                    style:
-                        const TextStyle(fontSize: 9, color: Colors.black87),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-
-            // Reported by
-            Row(
-              children: [
-                const Icon(Icons.person_outline,
-                    size: 10, color: Colors.black54),
-                const SizedBox(width: 4),
-                Text(
-                  'Reported By $reportedByName',
-                  style:
-                      const TextStyle(fontSize: 9, color: Colors.black87),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-
-            // Timestamp
-            Text(
-              formattedDate,
-              style:
-                  const TextStyle(fontSize: 7, color: Colors.black38),
-            ),
-
-            // Description
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                description,
-                style:
-                    const TextStyle(fontSize: 8, color: Colors.black87),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-
-            // Reviewed badge
-            if (reviewed) ...[
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color:
-                      const Color(0xFF10B981).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Reviewed',
-                  style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF10B981)),
-                ),
-              ),
-            ],
-          ],
-        ),
+            child: const Icon(Icons.flag_outlined,
+                size: 36, color: _C.tealDark),
+          ),
+          const SizedBox(height: 14),
+          const Text('No reports found',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _C.textDark)),
+          const SizedBox(height: 4),
+          const Text('All clear!',
+              style: TextStyle(fontSize: 12, color: _C.textMid)),
+        ],
       ),
     );
   }
 
-  // ─── Severity Badge ───────────────────────────────────────────────────────
-  Widget _buildSeverityBadge(String severity) {
-    Color bg;
-    Color border;
-    Color text;
-    String label;
-
-    switch (severity.toLowerCase()) {
-      case 'medium':
-        bg = const Color(0xFFFFDE00).withOpacity(0.4);
-        border = const Color(0xFFFFDE00);
-        text = const Color(0xFFBDA713);
-        label = 'Medium';
-        break;
-      case 'high':
-        bg = const Color(0xFFE8753D).withOpacity(0.3);
-        border = const Color(0xFFE8753D);
-        text = const Color(0xFFE8753D);
-        label = 'High';
-        break;
-      case 'low':
-      default:
-        bg = Colors.white;
-        border = Colors.black.withOpacity(0.4);
-        text = Colors.black;
-        label = 'Low';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: border, width: 0.5),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-            fontSize: 8, fontWeight: FontWeight.w700, color: text),
-      ),
-    );
-  }
-
-  Color _severityIconColor(String severity) {
-    switch (severity.toLowerCase()) {
-      case 'high':
-        return const Color(0xFFE8753D);
-      case 'medium':
-        return const Color(0xFFBDA713);
-      case 'low':
-      default:
-        return Colors.black45;
-    }
-  }
-
-  // ─── Report Detail Bottom Sheet ───────────────────────────────────────────
+  // ── Report Detail Bottom Sheet ────────────────────────────────────────
   void _showReportDetail(
       BuildContext context, Map<String, dynamic> report) {
-    final reportId = report['id'] ?? '';
-    final title = report['title'] ?? 'Fake Restroom Location';
-    final reportedByName = report['reportedByName'] ?? 'Unknown';
-    final reportedByEmail = report['reportedByEmail'] ?? '';
-    final description = report['description'] ?? '';
-    final severity = report['severity'] ?? 'low';
-    final restroomName = report['restroomName'] ?? '';
-    final createdAt = report['createdAt'];
+    final reportId      = report['id'] ?? '';
+    final title         = report['title'] ?? 'Untitled Report';
+    final reportedBy    = report['reportedByName'] ?? 'Unknown';
+    final reportedEmail = report['reportedByEmail'] ?? '';
+    final description   = report['description'] ?? '';
+    final severity      = report['severity'] ?? 'low';
+    final restroomName  = report['restroomName'] ?? '';
+    final createdAt     = report['createdAt'];
 
     String formattedDate = '';
     if (createdAt != null && createdAt is Timestamp) {
@@ -401,29 +265,30 @@ class _AdminReportPageState extends State<AdminReportPage> {
         maxChildSize: 0.92,
         builder: (ctx, scrollController) => Container(
           decoration: const BoxDecoration(
-            color: Color(0xFFFCF9EA),
+            color: _C.bg,
             borderRadius:
-                BorderRadius.vertical(top: Radius.circular(20)),
+                BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
             children: [
-              Container(
-                margin: const EdgeInsets.only(top: 10),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(2),
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 4),
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: _C.divider,
+                      borderRadius: BorderRadius.circular(99)),
                 ),
               ),
               Expanded(
                 child: SingleChildScrollView(
                   controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title row
+                      // Title + severity
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -432,72 +297,66 @@ class _AdminReportPageState extends State<AdminReportPage> {
                               crossAxisAlignment:
                                   CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  title,
-                                  style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.black),
-                                ),
+                                Text(title,
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: _C.textDark)),
                                 const SizedBox(height: 2),
-                                Text(
-                                  'Report ID : $reportId',
-                                  style: const TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.black45),
-                                ),
+                                Text('ID: $reportId',
+                                    style: const TextStyle(
+                                        fontSize: 10,
+                                        color: _C.textLight)),
                               ],
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _buildSeverityBadge(severity),
+                          _SeverityBadge(severity: severity),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
 
+                      // Location
                       if (restroomName.isNotEmpty) ...[
-                        _detailRow(
-                            Icons.location_on_outlined, restroomName),
-                        const SizedBox(height: 8),
+                        _detailRow(Icons.location_on_rounded,
+                            restroomName),
+                        const SizedBox(height: 12),
                       ],
 
                       // Description
                       if (description.isNotEmpty) ...[
-                        const Text('Description',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black)),
-                        const SizedBox(height: 6),
+                        _sectionLabel('Description',
+                            Icons.description_rounded),
+                        const SizedBox(height: 8),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(6),
+                            color: _C.card,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: _C.divider, width: 1),
                           ),
-                          child: Text(
-                            description,
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.black87),
-                          ),
+                          child: Text(description,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _C.textMid,
+                                  height: 1.5)),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                       ],
 
-                      // Reporter info
-                      const Text('Reported By',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black)),
-                      const SizedBox(height: 6),
+                      // Reporter
+                      _sectionLabel(
+                          'Reported By', Icons.person_rounded),
+                      const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(5),
+                          color: _C.card,
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: _C.divider, width: 1),
                         ),
                         child: Row(
                           mainAxisAlignment:
@@ -507,16 +366,16 @@ class _AdminReportPageState extends State<AdminReportPage> {
                               crossAxisAlignment:
                                   CrossAxisAlignment.start,
                               children: [
-                                Text(reportedByName,
+                                Text(reportedBy,
                                     style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black)),
-                                if (reportedByEmail.isNotEmpty)
-                                  Text(reportedByEmail,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: _C.textDark)),
+                                if (reportedEmail.isNotEmpty)
+                                  Text(reportedEmail,
                                       style: const TextStyle(
-                                          fontSize: 8,
-                                          color: Colors.black45)),
+                                          fontSize: 10,
+                                          color: _C.textLight)),
                               ],
                             ),
                             Column(
@@ -525,13 +384,13 @@ class _AdminReportPageState extends State<AdminReportPage> {
                               children: [
                                 const Text('Submitted',
                                     style: TextStyle(
-                                        fontSize: 8,
-                                        color: Colors.black45)),
+                                        fontSize: 9,
+                                        color: _C.textLight)),
                                 Text(formattedDate,
                                     style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.black)),
+                                        color: _C.textDark)),
                               ],
                             ),
                           ],
@@ -539,46 +398,24 @@ class _AdminReportPageState extends State<AdminReportPage> {
                       ),
                       const SizedBox(height: 24),
 
-                      // Action buttons
+                      // Buttons
                       Row(
                         children: [
                           Expanded(
-                            child: ElevatedButton(
-                              onPressed: () =>
+                            child: _ActionButton(
+                              label: 'Mark as Reviewed',
+                              color: _C.green,
+                              onTap: () =>
                                   _markReviewed(context, reportId),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    const Color(0xFF10B981),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 12),
-                              ),
-                              child: const Text('Mark as Reviewed',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w700)),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: ElevatedButton(
-                              onPressed: () =>
+                            child: _ActionButton(
+                              label: 'Dismiss',
+                              color: _C.redLight,
+                              onTap: () =>
                                   _dismissReport(context, reportId),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    const Color(0xFFEF4444),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 12),
-                              ),
-                              child: const Text('Dismiss',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ],
@@ -594,15 +431,37 @@ class _AdminReportPageState extends State<AdminReportPage> {
     );
   }
 
+  Widget _sectionLabel(String title, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: _C.teal.withOpacity(0.25),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(icon, size: 13, color: _C.tealDark),
+        ),
+        const SizedBox(width: 7),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: _C.textDark)),
+      ],
+    );
+  }
+
   Widget _detailRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 12, color: Colors.black54),
+        Icon(icon, size: 13, color: _C.textLight),
         const SizedBox(width: 6),
         Expanded(
           child: Text(text,
-              style:
-                  const TextStyle(fontSize: 11, color: Colors.black87)),
+              style: const TextStyle(
+                  fontSize: 12, color: _C.textMid)),
         ),
       ],
     );
@@ -615,23 +474,13 @@ class _AdminReportPageState extends State<AdminReportPage> {
           .collection('reports')
           .doc(reportId)
           .update({'reviewed': true});
-
       if (context.mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Report marked as reviewed.'),
-            backgroundColor: Color(0xFF10B981),
-          ),
-        );
+        _snack(context, 'Report marked as reviewed.', _C.green);
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'),
-              backgroundColor: Colors.red),
-        );
+        _snack(context, 'Error: $e', _C.redLight);
       }
     }
   }
@@ -643,24 +492,437 @@ class _AdminReportPageState extends State<AdminReportPage> {
           .collection('reports')
           .doc(reportId)
           .delete();
-
       if (context.mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Report dismissed.'),
-            backgroundColor: Color(0xFFEF4444),
-          ),
-        );
+        _snack(context, 'Report dismissed.', _C.redLight);
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'),
-              backgroundColor: Colors.red),
-        );
+        _snack(context, 'Error: $e', _C.redLight);
       }
     }
+  }
+
+  void _snack(BuildContext context, String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+}
+
+// ─────────────────────────────────────────────
+// Report Card
+// ─────────────────────────────────────────────
+class _ReportCard extends StatefulWidget {
+  final Map<String, dynamic> report;
+  final VoidCallback onTap;
+  const _ReportCard({required this.report, required this.onTap});
+
+  @override
+  State<_ReportCard> createState() => _ReportCardState();
+}
+
+class _ReportCardState extends State<_ReportCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scale = Tween(begin: 1.0, end: 0.97)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Color _severityColor(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'high':
+        return _C.redLight;
+      case 'medium':
+        return _C.yellow;
+      default:
+        return _C.textLight;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r            = widget.report;
+    final title        = r['title'] ?? 'Untitled Report';
+    final reportedBy   = r['reportedByName'] ?? 'Unknown';
+    final description  = r['description'] ?? '';
+    final severity     = r['severity'] ?? 'low';
+    final reviewed     = r['reviewed'] ?? false;
+    final restroomName = r['restroomName'] ?? '';
+    final photoCount   = (r['photos'] as List?)?.length ?? 0;
+    final createdAt    = r['createdAt'];
+    final severityColor = _severityColor(severity);
+
+    String formattedDate = '';
+    if (createdAt != null && createdAt is Timestamp) {
+      final dt = createdAt.toDate();
+      formattedDate =
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}  '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+
+    return GestureDetector(
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) {
+        _ctrl.reverse();
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      onTapCancel: () => _ctrl.reverse(),
+      child: AnimatedBuilder(
+        animation: _scale,
+        builder: (_, child) =>
+            Transform.scale(scale: _scale.value, child: child),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _C.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _C.divider, width: 1),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Top row
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: severityColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.flag_rounded,
+                              size: 18, color: severityColor),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _C.textDark),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(formattedDate,
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      color: _C.textLight)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _SeverityBadge(severity: severity),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Divider(color: _C.divider, height: 1, thickness: 1),
+                    const SizedBox(height: 10),
+
+                    // Location
+                    if (restroomName.isNotEmpty) ...[
+                      _infoRow(
+                          Icons.location_on_rounded, restroomName),
+                      const SizedBox(height: 5),
+                    ],
+                    _infoRow(Icons.person_rounded, reportedBy),
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      _infoRow(Icons.notes_rounded, description,
+                          maxLines: 2),
+                    ],
+                    if (photoCount > 0) ...[
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Icon(Icons.photo_library_rounded,
+                            size: 12, color: _C.textLight),
+                        const SizedBox(width: 4),
+                        Text('$photoCount photos',
+                            style: const TextStyle(
+                                fontSize: 10, color: _C.textLight)),
+                      ]),
+                    ],
+                  ],
+                ),
+              ),
+
+              // Footer
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: reviewed
+                      ? _C.green.withOpacity(0.1)
+                      : _C.orange.withOpacity(0.1),
+                  borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(16)),
+                ),
+                child: Center(
+                  child: Text(
+                    reviewed ? '✓  Reviewed' : 'Tap to review →',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: reviewed ? _C.green : _C.orange,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text, {int maxLines = 1}) {
+    return Row(
+      crossAxisAlignment: maxLines > 1
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Icon(icon, size: 12, color: _C.textLight),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 12, color: _C.textMid),
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Severity Badge
+// ─────────────────────────────────────────────
+class _SeverityBadge extends StatelessWidget {
+  final String severity;
+  const _SeverityBadge({required this.severity});
+
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+    String label;
+    switch (severity.toLowerCase()) {
+      case 'high':
+        color = _C.redLight;
+        label = 'High';
+        break;
+      case 'medium':
+        color = _C.yellow;
+        label = 'Medium';
+        break;
+      default:
+        color = _C.textLight;
+        label = 'Low';
+    }
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: color),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Action button
+// ─────────────────────────────────────────────
+class _ActionButton extends StatefulWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionButton(
+      {required this.label, required this.color, required this.onTap});
+
+  @override
+  State<_ActionButton> createState() => _ActionButtonState();
+}
+
+class _ActionButtonState extends State<_ActionButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scale = Tween(begin: 1.0, end: 0.95)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) {
+        _ctrl.reverse();
+        HapticFeedback.mediumImpact();
+        widget.onTap();
+      },
+      onTapCancel: () => _ctrl.reverse(),
+      child: AnimatedBuilder(
+        animation: _scale,
+        builder: (_, child) =>
+            Transform.scale(scale: _scale.value, child: child),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [widget.color, widget.color.withOpacity(0.8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                  color: widget.color.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5)),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              widget.label,
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Circle back button
+// ─────────────────────────────────────────────
+class _BackButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _BackButton({required this.onTap});
+
+  @override
+  State<_BackButton> createState() => _BackButtonState();
+}
+
+class _BackButtonState extends State<_BackButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _scale = Tween(begin: 1.0, end: 0.88)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) {
+        _ctrl.reverse();
+        HapticFeedback.lightImpact();
+        widget.onTap();
+      },
+      onTapCancel: () => _ctrl.reverse(),
+      child: AnimatedBuilder(
+        animation: _scale,
+        builder: (_, child) =>
+            Transform.scale(scale: _scale.value, child: child),
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.85),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2)),
+            ],
+          ),
+          child: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 18, color: _C.textDark),
+        ),
+      ),
+    );
   }
 }
