@@ -1,6 +1,11 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
@@ -74,6 +79,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   };
 
   List<String> photoUrls = [];
+  List<File> _localPhotos = [];   // local files staged before upload
+  bool _isUploadingPhotos = false;
 
   // Entry animation
   late AnimationController _enterCtrl;
@@ -270,11 +277,23 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
 
       try {
         // 1. นำข้อมูลจากฟอร์มมาสร้างเป็น RestroomModel ก่อน
+        // Pre-generate a doc ID so we can use it for Storage paths
+        final docRef = FirebaseFirestore.instance.collection('requests').doc();
+        final tempId = docRef.id;
+
+        // Upload photos to Firebase Storage (if any)
+        List<String> uploadedUrls = [];
+        if (_localPhotos.isNotEmpty) {
+          setState(() => _isUploadingPhotos = true);
+          uploadedUrls = await _uploadPhotos(tempId);
+          setState(() => _isUploadingPhotos = false);
+        }
+
         final newRestroom = RestroomModel(
-          restroomId: '', // ปล่อยว่างไว้ เพราะยังไม่ได้อนุมัติจริง
+          restroomId: '',
           restroomName: _nameController.text,
           address: _locationController.text,
-          latitude: _selectedLatitude!, 
+          latitude: _selectedLatitude!,
           longitude: _selectedLongitude!,
           openTime: openTime?.format(context),
           closeTime: closeTime?.format(context),
@@ -282,16 +301,16 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
           is24hrs: is24Hours,
           phoneNumber: _phoneController.text,
           amenities: _amenities,
-          photos: photoUrls,
-          createdBy: currentUserId, 
+          photos: uploadedUrls,   // real Firebase Storage URLs
+          createdBy: currentUserId,
         );
 
         // 2. นำ RestroomModel มาห่อด้วย RequestModel อีกชั้น
         final newRequest = RequestModel(
-          requestId: '', 
+          requestId: tempId,
           restroom: newRestroom,
-          userId: currentUserId, 
-          createdAt: Timestamp.now(), // ใช้งาน Timestamp จาก Firestore
+          userId: currentUserId,
+          createdAt: Timestamp.now(),
         );
 
         // 3. ส่งข้อมูลขึ้น Firestore ผ่าน RequestService
@@ -571,9 +590,15 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                   _selectedLongitude = _currentMapPosition.longitude;
                 });
               },
-              zoomControlsEnabled: false, // ซ่อนปุ่มซูมเพื่อความสะอาดตา
-              myLocationEnabled: _hasLocationPermission,    // แสดงจุดฟ้าๆ ของผู้ใช้
-              myLocationButtonEnabled: false, // ซ่อนปุ่มตำแหน่งของ Google เพื่อใช้ปุ่มของเราแทน
+              zoomControlsEnabled: false,
+              myLocationEnabled: _hasLocationPermission,
+              myLocationButtonEnabled: false,
+              // Allow map gestures to win over the parent ScrollView
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<EagerGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
             ),
             
             // 2. หมุดตรงกลาง (จะอยู่กับที่เสมอขณะที่แผนที่ขยับ)
@@ -606,14 +631,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Getting current location…'),
-            backgroundColor: _C.mint,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        _getCurrentLocation();
       },
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -976,40 +994,136 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     );
   }
 
+  // ── Photo picker helpers ─────────────────────────────────────────
+  void _showPhotoSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _C.bg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: _C.divider, borderRadius: BorderRadius.circular(99))),
+            const SizedBox(height: 16),
+            const Text('Add Photo',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.textDark)),
+            const SizedBox(height: 4),
+            const Text('Add photos of the restroom',
+                style: TextStyle(fontSize: 12, color: _C.textMid)),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _PhotoSourceBtn(
+                  icon: Icons.camera_alt_rounded,
+                  label: 'Camera',
+                  color: _C.mint,
+                  onTap: () { Navigator.pop(ctx); _pickPhoto(ImageSource.camera); },
+                ),
+                _PhotoSourceBtn(
+                  icon: Icons.photo_library_rounded,
+                  label: 'Gallery',
+                  color: _C.orange,
+                  onTap: () { Navigator.pop(ctx); _pickPhoto(ImageSource.gallery); },
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: source,
+      imageQuality: 80,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    );
+    if (picked == null) return;
+    setState(() => _localPhotos.add(File(picked.path)));
+  }
+
+  void _removePhoto(int index) {
+    setState(() => _localPhotos.removeAt(index));
+  }
+
+  Future<List<String>> _uploadPhotos(String requestId) async {
+    final urls = <String>[];
+    for (final file in _localPhotos) {
+      final fileName = 'requests/$requestId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final ref = FirebaseStorage.instance.ref().child(fileName);
+      final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+      urls.add(await task.ref.getDownloadURL());
+    }
+    return urls;
+  }
+
   // ── Photo row ─────────────────────────────────────────────────────────
   Widget _photoRow() {
-    return Row(
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: [
+        // Local photo previews with remove button
+        ..._localPhotos.asMap().entries.map((e) {
+          final i = e.key;
+          final file = e.value;
+          return Stack(
+            children: [
+              Container(
+                width: 72, height: 72,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: _C.pinkLight.withOpacity(0.3),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.file(file, fit: BoxFit.cover),
+                ),
+              ),
+              Positioned(
+                top: 2, right: 2,
+                child: GestureDetector(
+                  onTap: () => _removePhoto(i),
+                  child: Container(
+                    width: 20, height: 20,
+                    decoration: const BoxDecoration(
+                      color: Colors.white, shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 13, color: Colors.red),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }),
+
         // Add photo button
         GestureDetector(
           onTap: () {
             HapticFeedback.lightImpact();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Opening camera/gallery…'),
-                backgroundColor: _C.mint,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            );
+            _showPhotoSourceSheet();
           },
           child: Container(
-            width: 72,
-            height: 72,
+            width: 72, height: 72,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [_C.mint.withOpacity(0.15), _C.mint.withOpacity(0.05)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
-                BoxShadow(
-                  color: _C.mint.withOpacity(0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
+                BoxShadow(color: _C.mint.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 3)),
               ],
             ),
             child: Column(
@@ -1022,23 +1136,6 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        // Photo previews
-        ...photoUrls.take(4).map((url) => Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: _C.pinkLight.withOpacity(0.3),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.network(url, fit: BoxFit.cover),
-            ),
-          ),
-        )),
       ],
     );
   }
@@ -1075,6 +1172,55 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
               letterSpacing: 0.3,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Photo source button (Camera / Gallery)
+// ─────────────────────────────────────────────
+class _PhotoSourceBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _PhotoSourceBtn({required this.icon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 130,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.18), color.withOpacity(0.08)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [color.withOpacity(0.25), color.withOpacity(0.12)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: color.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 3))],
+              ),
+              child: Icon(icon, size: 26, color: color),
+            ),
+            const SizedBox(height: 10),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+          ],
         ),
       ),
     );
