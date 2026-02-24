@@ -33,8 +33,8 @@ dependencies:
   firebase_core: ^4.4.0      # หัวใจหลัก
   firebase_auth: ^6.1.4      # ระบบล็อคอิน
   cloud_firestore: ^6.1.2    # ฐานข้อมูล
-  geolocator: ^13.0.0        # หาพิกัด GPS เครื่อง
-  google_maps_flutter: ^2.10.0 # แผนที่
+  geolocator: ^14.0.2        # หาพิกัด GPS เครื่อง
+  google_maps_flutter: ^2.14.2 # แผนที่
   provider: ^6.1.5+1
   image_picker: ^1.0.7       # สำหรับเลือกรูปภาพ
   google_sign_in: ^6.3.0

@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:restroom_near_u/models/request_model.dart';
+import 'package:restroom_near_u/models/restroom_model.dart';
+import 'package:restroom_near_u/services/request_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens - Figma inspired theme
@@ -32,9 +39,14 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   final _nameController    = TextEditingController();
   final _locationController = TextEditingController();
   final _phoneController   = TextEditingController();
+  GoogleMapController? _mapController;
+  LatLng _currentMapPosition = const LatLng(13.8478, 100.5696);
+  double? _selectedLatitude;
+  double? _selectedLongitude;
+  bool _hasLocationPermission = false;
 
-  bool isFree     = true;
-  bool is24Hours  = true;
+  bool isFree = true;
+  bool is24Hours = true;
   TimeOfDay? openTime;
   TimeOfDay? closeTime;
 
@@ -68,6 +80,47 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
 
+  Future<void> _getInitialLocation() async {
+    try {
+      // 1. เช็ค GPS และ Permission 
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return; 
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      setState(() {
+        _hasLocationPermission = true;
+      });
+
+      // 2. ดึงพิกัดปัจจุบัน
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        )
+      );
+      // 3. อัปเดตตัวแปรตำแหน่ง
+      setState(() {
+        _selectedLatitude = position.latitude;
+        _selectedLongitude = position.longitude;
+        _currentMapPosition = LatLng(position.latitude, position.longitude);
+      });
+
+      // 4. สั่งให้กล้องของแผนที่วิ่งไปที่ตำแหน่งผู้ใช้ทันที
+      if (_mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
+        );
+      }
+    } catch (e) {
+      print("Error getting initial location: $e");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +131,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     _fadeAnim  = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
         .animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
+
+    _getInitialLocation();
   }
 
   @override
@@ -107,17 +162,168 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     if (picked != null) setState(() => isOpen ? openTime = picked : closeTime = picked);
   }
 
-  void _submitForm() {
+  Future<void> _getCurrentLocation() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text("Getting current location..."),
+        backgroundColor: _C.mint,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadiusGeometry.circular(12)),
+      )
+    );
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if(!serviceEnabled) throw Exception("Location services are disabled.");
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if(permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if(permission == LocationPermission.denied) {
+          throw Exception('Location permissions are denied');
+        }
+      }
+      if(permission == LocationPermission.deniedForever) {
+        throw Exception("Location permissions are permanently denied.");
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        )
+      );
+
+      setState(() {
+        _selectedLatitude = position.latitude;
+        _selectedLongitude = position.longitude;
+
+        _currentMapPosition = LatLng(position.latitude, position.longitude);
+      });
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location found! Lat: ${_selectedLatitude!.toStringAsFixed(4)}...'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: _C.pink,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       HapticFeedback.mediumImpact();
+
+      if (_selectedLatitude == null || _selectedLongitude == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Please set the restroom location first.'),
+            backgroundColor: _C.pink,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        return; // หยุดการทำงานถ้ายังไม่มีพิกัด
+      }
+
+      final User? currentUser = FirebaseAuth.instance.currentUser;
+      if(currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("Please login to submit a restroom."),
+            backgroundColor: _C.pink,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
+        return ;
+      }
+      
+      final String currentUserId = currentUser.uid;
+      // แสดง SnackBar แจ้งว่ากำลังโหลด
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Submitting restroom…'),
+          content: const Text('Submitting request...'),
           backgroundColor: _C.mint,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
+
+      try {
+        // 1. นำข้อมูลจากฟอร์มมาสร้างเป็น RestroomModel ก่อน
+        final newRestroom = RestroomModel(
+          restroomId: '', // ปล่อยว่างไว้ เพราะยังไม่ได้อนุมัติจริง
+          restroomName: _nameController.text,
+          address: _locationController.text,
+          latitude: _selectedLatitude!, 
+          longitude: _selectedLongitude!,
+          openTime: openTime?.format(context),
+          closeTime: closeTime?.format(context),
+          isFree: isFree,
+          is24hrs: is24Hours,
+          phoneNumber: _phoneController.text,
+          amenities: _amenities,
+          photos: photoUrls,
+          createdBy: currentUserId, 
+        );
+
+        // 2. นำ RestroomModel มาห่อด้วย RequestModel อีกชั้น
+        final newRequest = RequestModel(
+          requestId: '', 
+          restroom: newRestroom,
+          userId: currentUserId, 
+          createdAt: Timestamp.now(), // ใช้งาน Timestamp จาก Firestore
+        );
+
+        // 3. ส่งข้อมูลขึ้น Firestore ผ่าน RequestService
+        await RequestService().createRequest(newRequest);
+
+        // 4. บันทึกสำเร็จ ให้เด้งกลับไปหน้าก่อนหน้า
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Request sent to admin successfully!'),
+              backgroundColor: Colors.green, 
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        print("Error submitting request: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to submit request. Please try again.'),
+              backgroundColor: _C.pink,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -331,14 +537,9 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   Widget _mapPreview() {
     return Container(
       width: double.infinity,
-      height: 148,
+      height: 200, 
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          colors: [_C.pinkLight.withOpacity(0.4), _C.mint.withOpacity(0.15)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.06),
@@ -352,27 +553,47 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Grid pattern for map-like appearance
-            CustomPaint(size: const Size(double.infinity, 148), painter: _GridPainter()),
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [_C.pink, _C.pink.withOpacity(0.8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _C.pink.withOpacity(0.4),
-                    blurRadius: 16,
-                    spreadRadius: 3,
-                  ),
-                ],
+            // 1. ตัวแผนที่ Google Map
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _currentMapPosition,
+                zoom: 16.0,
               ),
-              child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 26),
+              onMapCreated: (controller) => _mapController = controller,
+              // เมื่อผู้ใช้เลื่อนแผนที่ ให้อัปเดตตำแหน่งปัจจุบัน
+              onCameraMove: (position) {
+                _currentMapPosition = position.target;
+              },
+              // เมื่อผู้ใช้หยุดเลื่อนแผนที่ ให้บันทึกพิกัดลงตัวแปรที่จะส่งฟอร์ม
+              onCameraIdle: () {
+                setState(() {
+                  _selectedLatitude = _currentMapPosition.latitude;
+                  _selectedLongitude = _currentMapPosition.longitude;
+                });
+              },
+              zoomControlsEnabled: false, // ซ่อนปุ่มซูมเพื่อความสะอาดตา
+              myLocationEnabled: _hasLocationPermission,    // แสดงจุดฟ้าๆ ของผู้ใช้
+              myLocationButtonEnabled: false, // ซ่อนปุ่มตำแหน่งของ Google เพื่อใช้ปุ่มของเราแทน
+            ),
+            
+            // 2. หมุดตรงกลาง (จะอยู่กับที่เสมอขณะที่แผนที่ขยับ)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 24), // ดันขึ้นนิดนึงให้ปลายหมุดแตะตรงกลางพอดี
+              child: Icon(
+                Icons.location_on_rounded, 
+                size: 40, 
+                color: _C.pink,
+              ),
+            ),
+            
+            // 3. จุดวงกลมเงาใต้หมุด (เพื่อความสวยงาม)
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
             ),
           ],
         ),

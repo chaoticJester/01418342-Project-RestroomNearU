@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../models/restroom_model.dart';
-import '../../services/restroom_service.dart';
+import '../../services/restroom_firestore.dart';
 import 'restroom_detail_page.dart';
+import 'package:geolocator/geolocator.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────/
 class _C {
   static const bg         = Color(0xFFFCF9EA);
   static const sheet      = Color(0xFFFAF7E8);
@@ -100,7 +101,10 @@ class _UserHomePageState extends State<UserHomePage>
     zoom: _initialZoom,
   );
 
-  late List<RestroomModel> restrooms;
+  bool _myLocationEnabled = false;
+
+  List<RestroomModel> restrooms = [];
+  StreamSubscription? _restroomSub;
   late AnimationController _listEntryController;
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
@@ -129,7 +133,6 @@ class _UserHomePageState extends State<UserHomePage>
   @override
   void initState() {
     super.initState();
-    restrooms = RestroomService.getMockRestrooms();
     _dpr = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
 
     _listEntryController = AnimationController(
@@ -147,18 +150,61 @@ class _UserHomePageState extends State<UserHomePage>
             begin: const Offset(0, 0.10), end: Offset.zero)
         .animate(CurvedAnimation(parent: _popupCtrl, curve: Curves.easeOutCubic));
 
-    _buildAllMarkers();
+    _restroomSub = RestroomService().getRestroomsStream().listen((data) {
+      if (mounted) {
+        setState(() {
+          restrooms = data;
+          _buildAllMarkers(); 
+        });
+      }
+    });
+    
+    _checkLocationPermission();
+  }
+
+  Future<void> _checkLocationPermission() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+
+    if (mounted) {
+      setState(() => _myLocationEnabled = true);
+      // เมื่อได้สิทธิ์แล้ว สั่งให้กล้องเลื่อนไปหาผู้ใช้เลยทันทีตอนเปิดแอป
+      _goToCurrentLocation(); 
+    }
+  }
+
+  Future<void> _goToCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high)
+      );
+
+      final GoogleMapController controller = await _mapCompleter.future;
+      controller.animateCamera(CameraUpdate.newLatLngZoom(
+        LatLng(position.latitude, position.longitude),
+        16.5, // ซูมเข้ามาให้เห็นชัดๆ
+      ));
+    } catch (e) {
+      print("Error locating user: $e");
+    }
   }
 
   @override
   void dispose() {
+    _restroomSub?.cancel();
     _zoomDebounce?.cancel();
     _listEntryController.dispose();
     _sheetController.dispose();
     _popupCtrl.dispose();
     super.dispose();
   }
-
   // ── Camera move — debounced zoom rebuild ────────────────────────────────
   void _onCameraMove(CameraPosition pos) {
     final newZoom = pos.zoom;
@@ -416,9 +462,11 @@ class _UserHomePageState extends State<UserHomePage>
         body: Stack(
           children: [
             // ── Map ──────────────────────────────────────────
-            GoogleMap(
+           GoogleMap(
               initialCameraPosition: _initialCamera,
               zoomControlsEnabled: false,
+              myLocationEnabled: _myLocationEnabled, 
+              myLocationButtonEnabled: false,        
               markers: Set<Marker>.of(_markers.values),
               onMapCreated: (ctrl) => _mapCompleter.complete(ctrl),
               onCameraMove: _onCameraMove,
@@ -472,6 +520,7 @@ class _UserHomePageState extends State<UserHomePage>
                   listEntryController: _listEntryController,
                   onHandleTap: _toggleSheet,
                   onRestroomTap: _onMarkerTap,
+                  onLocateTap: _goToCurrentLocation, // 🌟 ส่งฟังก์ชันไปให้ปุ่ม
                 );
               },
             ),
@@ -502,7 +551,7 @@ class _MarkerPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOpen = RestroomService.isOpen(restroom);
+    final isOpen = RestroomService().checkIfOpen(restroom);
 
     return Positioned(
       bottom: MediaQuery.of(context).size.height * 0.15 + 12,
@@ -692,6 +741,7 @@ class _BottomSheetContent extends StatelessWidget {
   final AnimationController listEntryController;
   final VoidCallback onHandleTap;
   final ValueChanged<RestroomModel> onRestroomTap;
+  final VoidCallback onLocateTap;
 
   const _BottomSheetContent({
     required this.scrollController,
@@ -699,6 +749,7 @@ class _BottomSheetContent extends StatelessWidget {
     required this.listEntryController,
     required this.onHandleTap,
     required this.onRestroomTap,
+    required this.onLocateTap,
   });
 
   @override
@@ -746,7 +797,10 @@ class _BottomSheetContent extends StatelessWidget {
                   ),
                   _CircleIconButton(
                     icon: Icons.near_me_rounded,
-                    onTap: () => HapticFeedback.lightImpact(),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      onLocateTap(); 
+                    },
                   ),
                 ]),
               ),
@@ -886,7 +940,7 @@ class _RestroomCardState extends State<_RestroomCard>
   @override
   Widget build(BuildContext context) {
     final r = widget.restroom;
-    final isOpen = RestroomService.isOpen(r);
+    final isOpen = RestroomService().checkIfOpen(r);
 
     return GestureDetector(
       onTapDown: (_) => _pressCtrl.forward(),

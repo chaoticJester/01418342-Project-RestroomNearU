@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/restroom_model.dart';
 import '../../models/review_model.dart';
-import '../../services/restroom_service.dart';
-import '../../services/review_service.dart';
+import '../../services/restroom_firestore.dart';
+import '../../services/review_firestore.dart';
 import 'photo_gallery_page.dart';
 import 'report_issue_page.dart';
 import 'write_review_page.dart';
+import 'package:geolocator/geolocator.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens - Figma inspired theme
@@ -39,10 +40,10 @@ class RestroomDetailPage extends StatefulWidget {
 class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
-  late List<ReviewModel> reviews;
-  late Map<String, int> ratingBreakdown;
-  late bool isOpen;
-  late String distance;
+  List<ReviewModel> reviews = [];
+  Map<String, int> ratingBreakdown = {'cleanliness': 5, 'availability': 5, 'amenities': 4, 'smell': 4};
+  bool isOpen = true;
+  String distance = "...";
   String selectedFilter = 'Recent';
   final Set<String> helpfulReviewIds = {};
 
@@ -73,12 +74,51 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     super.dispose();
   }
 
-  void _loadData() {
-    reviews       = ReviewService.getReviewsByRestroomId(widget.restroom.restroomId);
-    ratingBreakdown = RestroomService.getRatingBreakdown(widget.restroom.restroomId);
-    isOpen        = RestroomService.isOpen(widget.restroom);
-    distance      = RestroomService.getDistance(
-      widget.restroom.latitude, widget.restroom.longitude);
+  void _loadData() async {
+    isOpen = RestroomService().checkIfOpen(widget.restroom);
+
+    Position position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+      )
+    );
+
+    double userLat = position.latitude;
+    double userLng = position.longitude;
+    distance = RestroomService().getDistance(userLat, userLng, widget.restroom.latitude, widget.restroom.longitude);
+
+    ReviewService().getReviewsByRestroomId(widget.restroom.restroomId).listen((data) {
+      if (mounted) {
+        setState(() {
+          reviews = data;
+          ratingBreakdown = _calculateBreakdown(data);
+          _sortReviews(selectedFilter); 
+        });
+      }
+    });
+  }
+
+  // ฟังก์ชันสำหรับคำนวณคะแนนแยกหมวดหมู่จากรีวิวทั้งหมด
+  Map<String, int> _calculateBreakdown(List<ReviewModel> currentReviews) {
+    if (currentReviews.isEmpty) {
+      return {'cleanliness': 0, 'availability': 0, 'amenities': 0, 'smell': 0};
+    }
+
+    //  เราจะใช้คะแนนรวม (rating) มาแปลงเป็นจำนวนดาว (int) ชั่วคราวไปก่อน
+    double totalRating = 0;
+    for (var r in currentReviews) {
+      totalRating += r.rating;
+    }
+    
+    // หาค่าเฉลี่ยแล้วปัดเศษเป็นจำนวนเต็ม (1-5)
+    int avgInt = (totalRating / currentReviews.length).round();
+
+    return {
+      'cleanliness': avgInt,
+      'availability': avgInt,
+      'amenities': avgInt,
+      'smell': avgInt,
+    };
   }
 
   void _sortReviews(String filter) {
@@ -860,7 +900,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                           offset: const Offset(0, 2),
                         ),
                       ]),
-                  child: Text(ReviewService.getRatingBadge(review.rating),
+                  child: Text(ReviewService().getRatingBadge(review.rating),
                       style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1267,7 +1307,7 @@ class _ReviewCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Text(ReviewService.getRatingBadge(review.rating),
+            child: Text(ReviewService().getRatingBadge(review.rating),
                 style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,

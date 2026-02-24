@@ -74,6 +74,21 @@ class ReviewService {
     });
   }
 
+  Stream<List<ReviewModel>> getReviewsByRestroomId(String restroomId) {
+    return _reviewCollection
+        .where('restroomId', isEqualTo: restroomId)
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return ReviewModel.fromMap(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+      }).toList();
+    });
+  }
+
   // UPDATE: แก้ไขรีวิว
   Future<void> updateReview(String reviewId, String newComment, double newRating) async {
     try {
@@ -104,5 +119,14 @@ class ReviewService {
       print("Error deleting review: $e");
       rethrow;
     }
+  }
+
+  // ฟังก์ชันคืนค่าคำบรรยายตามช่วงคะแนน 
+  String getRatingBadge(double rating) {
+    if (rating >= 4.5) return 'Awesome!';
+    if (rating >= 3.5) return 'Good';
+    if (rating >= 2.5) return 'Average';
+    if (rating >= 1.5) return 'Poor';
+    return 'Terrible';
   }
 }

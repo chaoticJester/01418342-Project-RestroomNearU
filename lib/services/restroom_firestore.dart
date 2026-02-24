@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '/models/restroom_model.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RestroomService {
   final CollectionReference _restroomCollection =
@@ -87,4 +88,29 @@ class RestroomService {
       rethrow;
     }
   }
+
+  bool checkIfOpen(RestroomModel r) {
+    if (r.is24hrs) return true;
+    if (r.openTime == null || r.closeTime == null) return false;
+    
+    // โค้ดสำหรับเช็คเวลาเปิดปิดคร่าวๆ (ถ้าต้องการเป๊ะๆ ต้องแปลง String เป็น TimeOfDay)
+    // ตอนนี้ให้ return true ไว้ก่อนเพื่อไม่ให้แอปแครช
+    return true; 
+  }
+
+  String getDistance(double startLat, double startLng, double endLat, double endLng) {
+    double distanceInMeters = Geolocator.distanceBetween(
+      startLat, startLng,
+      endLat, endLng
+    );
+    
+    if (distanceInMeters < 1000) {
+      return '${distanceInMeters.round()} m';
+    } else {
+      double distanceInKm = distanceInMeters / 1000;
+      return '${distanceInKm.toStringAsFixed(1)} km';
+    }
+  }
+
+
 }
