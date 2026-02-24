@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/restroom_model.dart';
 import '../../models/review_model.dart';
 import '../../services/restroom_firestore.dart';
@@ -41,11 +45,15 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
   List<ReviewModel> reviews = [];
-  Map<String, int> ratingBreakdown = {'cleanliness': 5, 'availability': 5, 'amenities': 4, 'smell': 4};
+  Map<int, int> starDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
   bool isOpen = true;
   String distance = "...";
   String selectedFilter = 'Recent';
   final Set<String> helpfulReviewIds = {};
+  bool _isUploadingPhoto = false;
+
+  // Live restroom data (avgRating / totalRatings update when reviews come in)
+  late RestroomModel _restroom;
 
   late AnimationController _enterCtrl;
   late Animation<double> _fadeAnim;
@@ -60,6 +68,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   @override
   void initState() {
     super.initState();
+    _restroom = widget.restroom;   // start with passed-in snapshot
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
@@ -87,38 +96,39 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     double userLng = position.longitude;
     distance = RestroomService().getDistance(userLat, userLng, widget.restroom.latitude, widget.restroom.longitude);
 
+    // Stream live restroom doc so avgRating/totalRatings stay current
+    FirebaseFirestore.instance
+        .collection('restrooms')
+        .doc(widget.restroom.restroomId)
+        .snapshots()
+        .listen((snap) {
+      if (mounted && snap.exists) {
+        setState(() {
+          _restroom = RestroomModel.fromMap(
+              snap.data() as Map<String, dynamic>, snap.id);
+        });
+      }
+    });
+
     ReviewService().getReviewsByRestroomId(widget.restroom.restroomId).listen((data) {
       if (mounted) {
         setState(() {
           reviews = data;
-          ratingBreakdown = _calculateBreakdown(data);
-          _sortReviews(selectedFilter); 
+          starDistribution = _calculateStarDistribution(data);
+          _sortReviews(selectedFilter);
         });
       }
     });
   }
 
-  // ฟังก์ชันสำหรับคำนวณคะแนนแยกหมวดหมู่จากรีวิวทั้งหมด
-  Map<String, int> _calculateBreakdown(List<ReviewModel> currentReviews) {
-    if (currentReviews.isEmpty) {
-      return {'cleanliness': 0, 'availability': 0, 'amenities': 0, 'smell': 0};
+  // Count how many reviews gave each star rating (1–5)
+  Map<int, int> _calculateStarDistribution(List<ReviewModel> currentReviews) {
+    final dist = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
+    for (final r in currentReviews) {
+      final star = r.rating.round().clamp(1, 5);
+      dist[star] = (dist[star] ?? 0) + 1;
     }
-
-    //  เราจะใช้คะแนนรวม (rating) มาแปลงเป็นจำนวนดาว (int) ชั่วคราวไปก่อน
-    double totalRating = 0;
-    for (var r in currentReviews) {
-      totalRating += r.rating;
-    }
-    
-    // หาค่าเฉลี่ยแล้วปัดเศษเป็นจำนวนเต็ม (1-5)
-    int avgInt = (totalRating / currentReviews.length).round();
-
-    return {
-      'cleanliness': avgInt,
-      'availability': avgInt,
-      'amenities': avgInt,
-      'smell': avgInt,
-    };
+    return dist;
   }
 
   void _sortReviews(String filter) {
@@ -139,12 +149,12 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
   // ── Navigation helpers ──────────────────────────────────────────────
   void _openGallery({int index = 0}) {
-    if (widget.restroom.photos.isEmpty) return;
+    if (_restroom.photos.isEmpty) return;
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => PhotoGalleryPage(
-        restroomId: widget.restroom.restroomId,
-        restroomName: widget.restroom.restroomName,
-        photos: widget.restroom.photos,
+        restroomId: _restroom.restroomId,
+        restroomName: _restroom.restroomName,
+        photos: _restroom.photos,
         initialIndex: index,
       ),
     ));
@@ -153,10 +163,138 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   void _openWriteReview() {
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => WriteReviewPage(
-        restroomId: widget.restroom.restroomId,
-        restroomName: widget.restroom.restroomName,
+        restroomId: _restroom.restroomId,
+        restroomName: _restroom.restroomName,
       ),
     )).then((_) => setState(_loadData));
+  }
+
+  // ── Add Photo ────────────────────────────────────────────────────────
+  void _showAddPhotoSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _C.bg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: _C.divider,
+                    borderRadius: BorderRadius.circular(99))),
+            const SizedBox(height: 16),
+            const Text('Add Photo',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _C.textDark)),
+            const SizedBox(height: 4),
+            const Text('Share a photo of this restroom',
+                style: TextStyle(fontSize: 12, color: _C.textMid)),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _PhotoSourceButton(
+                  icon: Icons.camera_alt_rounded,
+                  label: 'Camera',
+                  color: _C.mint,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickAndUploadPhoto(ImageSource.camera);
+                  },
+                ),
+                _PhotoSourceButton(
+                  icon: Icons.photo_library_rounded,
+                  label: 'Gallery',
+                  color: _C.orange,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickAndUploadPhoto(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadPhoto(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: source,
+      imageQuality: 80,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final file = File(picked.path);
+      final fileName = 'restrooms/${_restroom.restroomId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storageRef = FirebaseStorage.instance.ref().child(fileName);
+
+      final uploadTask = await storageRef.putFile(
+        file,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+      // Append URL to Firestore photos array
+      await FirebaseFirestore.instance
+          .collection('restrooms')
+          .doc(_restroom.restroomId)
+          .update({
+        'photos': FieldValue.arrayUnion([downloadUrl]),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+
+      if (mounted) {
+        setState(() {
+          // Optimistically update local list
+          _restroom.photos.add(downloadUrl);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Photo uploaded successfully!'),
+            ]),
+            backgroundColor: _C.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.error_rounded, color: Colors.white, size: 16),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Upload failed: ${e.toString()}')),
+            ]),
+            backgroundColor: _C.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
   }
 
   // ── Build ────────────────────────────────────────────────────────────
@@ -261,7 +399,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.restroom.restroomName,
+                  _restroom.restroomName,
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -299,7 +437,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                           const Icon(Icons.star_rounded, color: _C.orange, size: 14),
                           const SizedBox(width: 3),
                           Text(
-                            widget.restroom.avgRating.toStringAsFixed(1),
+                            _restroom.avgRating.toStringAsFixed(1),
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -308,7 +446,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                           ),
                           const SizedBox(width: 3),
                           Text(
-                            '(${widget.restroom.totalRatings})',
+                            '(${_restroom.totalRatings})',
                             style: const TextStyle(fontSize: 11, color: _C.textMid),
                           ),
                         ],
@@ -357,13 +495,13 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
   // ── Info cards row (Location / Hours / Price) ────────────────────────
   Widget _buildInfoCards() {
-    final hours = widget.restroom.is24hrs
+    final hours = _restroom.is24hrs
         ? '24 Hours'
-        : '${widget.restroom.openTime} – ${widget.restroom.closeTime}';
-    final price = widget.restroom.isFree
+        : '${_restroom.openTime} – ${_restroom.closeTime}';
+    final price = _restroom.isFree
         ? 'Free'
-        : widget.restroom.price != null
-            ? '${widget.restroom.price} THB'
+        : _restroom.price != null
+            ? '${_restroom.price} THB'
             : 'Paid';
 
     return Padding(
@@ -391,89 +529,122 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
   // ── Rating breakdown card ─────────────────────────────────────────────
   Widget _buildRatingBreakdownCard() {
-    final categories = [
-      ('Cleanliness',  ratingBreakdown['cleanliness']  ?? 0, Icons.cleaning_services_rounded),
-      ('Availability', ratingBreakdown['availability'] ?? 0, Icons.door_front_door_rounded),
-      ('Amenities',    ratingBreakdown['amenities']    ?? 0, Icons.chair_rounded),
-      ('Smell',        ratingBreakdown['smell']        ?? 0, Icons.air_rounded),
-    ];
+    final total = reviews.length;
+    final avg   = _restroom.avgRating;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: _SectionCard(
         title: 'Rating Breakdown',
         icon: Icons.bar_chart_rounded,
-        child: Column(
-          children: categories.map((c) {
-            final (label, stars, icon) = c;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
+        child: total == 0
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Column(children: const [
+                    Icon(Icons.star_border_rounded, size: 32, color: _C.textLight),
+                    SizedBox(height: 6),
+                    Text('No ratings yet',
+                        style: TextStyle(fontSize: 12, color: _C.textLight)),
+                  ]),
+                ),
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [_C.pinkLight, _C.pink.withOpacity(0.3)],
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _C.pink.withOpacity(0.2),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
+                  // Left: big average score
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        avg.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontSize: 44,
+                          fontWeight: FontWeight.w800,
+                          color: _C.textDark,
+                          height: 1,
                         ),
-                      ],
-                    ),
-                    child: Icon(icon, size: 16, color: _C.pink),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(5, (i) {
+                          if (i < avg.floor()) {
+                            return const Icon(Icons.star_rounded, size: 14, color: _C.orange);
+                          } else if (i < avg && (avg - avg.floor()) >= 0.5) {
+                            return const Icon(Icons.star_half_rounded, size: 14, color: _C.orange);
+                          } else {
+                            return const Icon(Icons.star_outline_rounded, size: 14, color: _C.textLight);
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$total review${total == 1 ? '' : 's'}',
+                        style: const TextStyle(fontSize: 10, color: _C.textLight),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 16),
+                  // Vertical divider
+                  Container(width: 1, height: 90, color: _C.divider),
+                  const SizedBox(width: 16),
+                  // Right: star distribution bars 5 → 1
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(label,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _C.textDark)),
-                        const SizedBox(height: 4),
-                        // Progress bar
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(99),
-                          child: LinearProgressIndicator(
-                            value: stars / 5,
-                            minHeight: 5,
-                            backgroundColor: _C.divider,
-                            valueColor:
-                                const AlwaysStoppedAnimation<Color>(_C.mint),
+                      children: [5, 4, 3, 2, 1].map((star) {
+                        final count = starDistribution[star] ?? 0;
+                        final fraction = total > 0 ? count / total : 0.0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
+                            children: [
+                              Text('$star',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: _C.textMid)),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.star_rounded, size: 11, color: _C.orange),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(99),
+                                  child: LinearProgressIndicator(
+                                    value: fraction,
+                                    minHeight: 7,
+                                    backgroundColor: _C.divider,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      star >= 4 ? _C.mint
+                                          : star == 3 ? _C.orange
+                                          : _C.pink,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 24,
+                                child: Text('$count',
+                                    textAlign: TextAlign.end,
+                                    style: const TextStyle(
+                                        fontSize: 10, color: _C.textLight)),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                        );
+                      }).toList(),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Row(
-                    children: List.generate(5, (i) => Icon(
-                      i < stars ? Icons.star_rounded : Icons.star_outline_rounded,
-                      size: 13,
-                      color: i < stars ? _C.orange : _C.textLight,
-                    )),
                   ),
                 ],
               ),
-            );
-          }).toList(),
-        ),
       ),
     );
   }
 
   // ── Amenities card ────────────────────────────────────────────────────
   Widget _buildAmenitiesCard() {
-    final amenities = widget.restroom.amenities.entries.toList();
+    final amenities = _restroom.amenities.entries.toList();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: _SectionCard(
@@ -536,7 +707,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
   // ── Photos card ───────────────────────────────────────────────────────
   Widget _buildPhotosCard() {
-    final photos = widget.restroom.photos;
+    final photos = _restroom.photos;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: _SectionCard(
@@ -629,7 +800,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             color: _C.mint,
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Opening directions to ${widget.restroom.restroomName}'),
+                content: Text('Opening directions to ${_restroom.restroomName}'),
                 backgroundColor: _C.mint,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
@@ -646,10 +817,10 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           ),
           const SizedBox(width: 10),
           _ActionBtn(
-            icon: Icons.add_a_photo_rounded,
-            label: 'Add Photo',
+            icon: _isUploadingPhoto ? Icons.hourglass_top_rounded : Icons.add_a_photo_rounded,
+            label: _isUploadingPhoto ? 'Uploading...' : 'Add Photo',
             color: _C.orange,
-            onTap: _openGallery,
+            onTap: _isUploadingPhoto ? () {} : _showAddPhotoSheet,
           ),
           const SizedBox(width: 10),
           _ActionBtn(
@@ -658,8 +829,8 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             color: _C.red,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => ReportIssuePage(
-                restroomId: widget.restroom.restroomId,
-                restroomName: widget.restroom.restroomName,
+                restroomId: _restroom.restroomId,
+                restroomName: _restroom.restroomName,
               ),
             )),
           ),
@@ -673,7 +844,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
       child: _SectionCard(
-        title: 'Reviews (${widget.restroom.totalRatings})',
+        title: 'Reviews (${_restroom.totalRatings})',
         icon: Icons.chat_bubble_outline_rounded,
         trailing: GestureDetector(
           onTap: _openWriteReview,
@@ -1384,6 +1555,79 @@ class _ReviewCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Photo source button (Camera / Gallery)
+// ─────────────────────────────────────────────
+class _PhotoSourceButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _PhotoSourceButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 130,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.18), color.withOpacity(0.08)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.15),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [color.withOpacity(0.25), color.withOpacity(0.12)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(icon, size: 26, color: color),
+            ),
+            const SizedBox(height: 10),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: color)),
+          ],
+        ),
       ),
     );
   }
