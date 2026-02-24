@@ -665,12 +665,6 @@ class _AccountInfo extends StatelessWidget {
           label: 'Email',
           value: email,
         ),
-        const SizedBox(height: 8),
-        _InfoRow(
-          icon: Icons.phone_rounded,
-          label: 'Phone',
-          value: '+66 8* *** ****',
-        ),
       ],
     );
   }
