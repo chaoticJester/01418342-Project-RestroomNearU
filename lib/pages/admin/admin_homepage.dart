@@ -44,6 +44,9 @@ class _AdminHomePageState extends State<AdminHomePage>
   int _totalToilets   = 0;
   int _activeUsers    = 0;
 
+  // Stream subscriptions for real-time counts
+  final List<dynamic> _subs = [];
+
   late AnimationController _enterCtrl;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -92,32 +95,60 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   @override
   void dispose() {
+    for (final s in _subs) s.cancel();
     _enterCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    // Load admin user info (one-time)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userModel = await _userService.getUserById(user.uid);
       if (mounted) setState(() => _adminUser = userModel);
     }
 
-    final toiletsSnap  = await FirebaseFirestore.instance.collection('restrooms').get();
-    final usersSnap    = await FirebaseFirestore.instance.collection('users').get();
-    final pendingSnap  = await FirebaseFirestore.instance
-        .collection('restrooms').where('status', isEqualTo: 'pending').get();
-    final reportsSnap  = await FirebaseFirestore.instance
-        .collection('reports').where('reviewed', isEqualTo: false).get();
+    // ── Real-time stream: Pending requests ──────────────────────────
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('requests')
+          .where('status', isEqualTo: 'pending')
+          .snapshots()
+          .listen((snap) {
+        if (mounted) setState(() => _pendingRequests = snap.size);
+      }),
+    );
 
-    if (mounted) {
-      setState(() {
-        _totalToilets    = toiletsSnap.size;
-        _activeUsers     = usersSnap.size;
-        _pendingRequests = pendingSnap.size;
-        _reportsToReview = reportsSnap.size;
-      });
-    }
+    // ── Real-time stream: Reports not yet reviewed ───────────────────
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('reports')
+          .where('reviewed', isEqualTo: false)
+          .snapshots()
+          .listen((snap) {
+        if (mounted) setState(() => _reportsToReview = snap.size);
+      }),
+    );
+
+    // ── Real-time stream: Total approved toilets ─────────────────────
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('restrooms')
+          .snapshots()
+          .listen((snap) {
+        if (mounted) setState(() => _totalToilets = snap.size);
+      }),
+    );
+
+    // ── Real-time stream: Active users ───────────────────────────────
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('users')
+          .snapshots()
+          .listen((snap) {
+        if (mounted) setState(() => _activeUsers = snap.size);
+      }),
+    );
   }
 
   @override
