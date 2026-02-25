@@ -30,7 +30,11 @@ class ReviewService {
       // 3. เตรียมข้อมูลรีวิว
       Map<String, dynamic> reviewData = review.toMap();
       reviewData['reviewId'] = reviewRef.id;
+      
+      // Override ALL time fields to guarantee they match perfectly on the server
       reviewData['timestamp'] = FieldValue.serverTimestamp();
+      reviewData['createdAt'] = FieldValue.serverTimestamp();
+      reviewData['updatedAt'] = FieldValue.serverTimestamp();
 
       // 4. เขียนลง database (ทำพร้อมกันทั้ง 2 ที่)
       transaction.set(reviewRef, reviewData); // สร้างรีวิว
@@ -38,6 +42,8 @@ class ReviewService {
         'avgRating': newAvg,
         'totalRatings': newTotal,
       });
+
+      await UserService().incrementReviewCount(reviewRef.id);
     });
   }
 
@@ -114,6 +120,7 @@ class ReviewService {
         'comment': newComment,
         'rating': newRating,
         'timestamp': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
       transaction.update(restroomRef, {
         'avgRating': newAvg,
@@ -145,7 +152,7 @@ class ReviewService {
     final restroomRef = firestore.collection('restrooms').doc(restroomId);
     final reviewRef = _reviewCollection.doc(reviewId);
 
-    return firestore.runTransaction((transaction) async {
+    await firestore.runTransaction((transaction) async {
       // 1. Read the current restroom data first
       DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
       if (!restroomSnapshot.exists) {
@@ -167,8 +174,8 @@ class ReviewService {
         'avgRating': newAvg,
         'totalRatings': newTotal < 0 ? 0 : newTotal, 
       });
-      await UserService().decrementReviewCount(reviewId);
     });
+    await UserService().incrementReviewCount(reviewRef.id);
   }
 
   // ฟังก์ชันคืนค่าคำบรรยายตามช่วงคะแนน 

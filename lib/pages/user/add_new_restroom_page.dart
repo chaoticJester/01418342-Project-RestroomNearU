@@ -280,6 +280,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         // Pre-generate a doc ID so we can use it for Storage paths
         final docRef = FirebaseFirestore.instance.collection('requests').doc();
         final tempId = docRef.id;
+        final String generatedId = FirebaseFirestore.instance.collection('restrooms').doc().id;
 
         // Upload photos to Firebase Storage (if any)
         List<String> uploadedUrls = [];
@@ -290,7 +291,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         }
 
         final newRestroom = RestroomModel(
-          restroomId: '',
+          restroomId: generatedId,
           restroomName: _nameController.text,
           address: _locationController.text,
           latitude: _selectedLatitude!,

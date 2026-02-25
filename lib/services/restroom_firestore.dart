@@ -11,18 +11,14 @@ class RestroomService {
   // CREATE: สร้างข้อมูลห้องน้ำใหม่
   Future<void> createRestroom(RestroomModel restroom) async {
     try {
-      // วิธีที่ 1: ถ้า Model มี ID มาแล้ว (กำหนดเอง)
-      if (restroom.restroomId.isNotEmpty) {
-        await _restroomCollection.doc(restroom.restroomId).set(restroom.toMap());
-      } 
-      // วิธีที่ 2: ถ้ายังไม่มี ID (ให้ Firestore Gen ให้)
-      else {
-        DocumentReference docRef = _restroomCollection.doc(); // สร้าง ID อัตโนมัติ
-        // บันทึกโดยแนบ ID ที่ Gen ได้เข้าไปในข้อมูลด้วย เพื่อให้ตรงกัน
-        Map<String, dynamic> data = restroom.toMap();
-        data['restroomId'] = docRef.id; 
-        await docRef.set(data);
+      // Check for safety (just in case you forgot to pre-generate it somewhere)
+      if (restroom.restroomId.isEmpty) {
+        throw Exception("Restroom ID cannot be empty. Please pre-generate the ID.");
       }
+      
+      // Because the ID is guaranteed to exist, we only need one line of code:
+      await _restroomCollection.doc(restroom.restroomId).set(restroom.toMap());
+      
     } catch (e) {
       print("Error creating restroom: $e");
       rethrow;
