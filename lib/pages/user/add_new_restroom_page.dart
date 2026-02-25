@@ -155,18 +155,29 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: _C.mint,
-            onPrimary: Colors.white,
-            surface: _C.bg,
+      builder: (context, child) => MediaQuery(
+        // Force 24-hour format regardless of device locale
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: _C.mint,
+              onPrimary: Colors.white,
+              surface: _C.bg,
+            ),
           ),
+          child: child!,
         ),
-        child: child!,
       ),
     );
     if (picked != null) setState(() => isOpen ? openTime = picked : closeTime = picked);
+  }
+
+  /// Format TimeOfDay as HH:mm (24-hour) — e.g. "08:30", "14:00"
+  String _formatTime24(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   Future<void> _getCurrentLocation() async {
@@ -296,8 +307,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
           address: _locationController.text,
           latitude: _selectedLatitude!,
           longitude: _selectedLongitude!,
-          openTime: openTime?.format(context),
-          closeTime: closeTime?.format(context),
+          openTime: openTime != null ? _formatTime24(openTime!) : null,
+          closeTime: closeTime != null ? _formatTime24(closeTime!) : null,
           isFree: isFree,
           is24hrs: is24Hours,
           phoneNumber: _phoneController.text,
@@ -905,7 +916,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                 Text(label,
                     style: const TextStyle(fontSize: 10, color: _C.textLight)),
                 Text(
-                  time?.format(context) ?? '--:--',
+                  time != null ? _formatTime24(time) : '--:--',
                   style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
