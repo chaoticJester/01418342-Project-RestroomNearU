@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '/models/restroom_model.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 
 class RestroomService {
   final CollectionReference _restroomCollection =
@@ -91,11 +93,30 @@ class RestroomService {
 
   bool checkIfOpen(RestroomModel r) {
     if (r.is24hrs) return true;
+
     if (r.openTime == null || r.closeTime == null) return false;
-    
-    // โค้ดสำหรับเช็คเวลาเปิดปิดคร่าวๆ (ถ้าต้องการเป๊ะๆ ต้องแปลง String เป็น TimeOfDay)
-    // ตอนนี้ให้ return true ไว้ก่อนเพื่อไม่ให้แอปแครช
-    return true; 
+
+    try {
+      final format = DateFormat.Hm(); // Parses "HH:mm" format e.g. "08:30"
+
+      final DateTime parsedOpen  = format.parse(r.openTime!);
+      final DateTime parsedClose = format.parse(r.closeTime!);
+      final DateTime now         = DateTime.now();
+
+      final int openMinutes  = parsedOpen.hour  * 60 + parsedOpen.minute;
+      final int closeMinutes = parsedClose.hour * 60 + parsedClose.minute;
+      final int nowMinutes   = now.hour          * 60 + now.minute;
+
+      if (closeMinutes < openMinutes) {
+        return nowMinutes >= openMinutes || nowMinutes < closeMinutes;
+      }
+
+      return nowMinutes >= openMinutes && nowMinutes < closeMinutes;
+
+    } catch (e) {
+      print("checkIfOpen parse error: $e");
+      return false;
+    }
   }
 
   String getDistance(double startLat, double startLng, double endLat, double endLng) {

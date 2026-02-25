@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '/models/review_model.dart'; 
+import 'package:restroom_near_u/services/user_firestore.dart';
 
 class ReviewService {
   final CollectionReference _reviewCollection =
@@ -90,35 +91,84 @@ class ReviewService {
   }
 
   // UPDATE: แก้ไขรีวิว
-  Future<void> updateReview(String reviewId, String newComment, double newRating) async {
-    try {
-      await _reviewCollection.doc(reviewId).update({
+  Future<void> updateReview(String reviewId, String restroomId, double oldRating, double newRating, String newComment) async {
+    final firestore = FirebaseFirestore.instance;
+    final restroomRef = firestore.collection('restrooms').doc(restroomId);
+    final reviewRef = _reviewCollection.doc(reviewId);
+
+    return firestore.runTransaction((transaction) async {
+      // 1. Read current restroom data first
+      DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
+      if (!restroomSnapshot.exists) {
+        throw Exception("Restroom does not exist!");
+      }
+
+      // 2. Calculate new average by swapping old rating out, new rating in
+      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
+      int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
+
+      double newAvg = currentTotal <= 0 ? newRating : ((currentAvg * currentTotal) - oldRating + newRating) / currentTotal;
+
+      // 3. Update review content and restroom rating simultaneously
+      transaction.update(reviewRef, {
         'comment': newComment,
         'rating': newRating,
-        'timestamp': FieldValue.serverTimestamp(), // อัปเดตเวลาแก้ไขล่าสุด
+        'timestamp': FieldValue.serverTimestamp(),
       });
-    } catch (e) {
-      print("Error updating review: $e");
-      rethrow;
-    }
+      transaction.update(restroomRef, {
+        'avgRating': newAvg,
+      });
+    });
   }
   
   // ฟังก์ชันกด Like รีวิว
-  Future<void> likeReview(String reviewId) async {
-     // ใช้ FieldValue.increment(1) เพื่อป้องกัน Race Condition เวลามีคนกดพร้อมกัน
-     await _reviewCollection.doc(reviewId).update({
-       'totalLikes': FieldValue.increment(1),
-     });
+  Future<void> toggleLikeReview(String reviewId, String userId) async {
+    final reviewRef = _reviewCollection.doc(reviewId);
+    final snapshot = await reviewRef.get();
+
+    if (!snapshot.exists) return;
+
+    final List likedBy = snapshot.get('likedBy') ?? [];
+    final bool alreadyLiked = likedBy.contains(userId);
+
+    await reviewRef.update({
+      'totalLikes': FieldValue.increment(alreadyLiked ? -1 : 1),
+      'likedBy': alreadyLiked 
+          ? FieldValue.arrayRemove([userId]) 
+          : FieldValue.arrayUnion([userId]),
+    });
   }
 
   // DELETE: ลบรีวิว
-  Future<void> deleteReview(String reviewId) async {
-    try {
-      await _reviewCollection.doc(reviewId).delete();
-    } catch (e) {
-      print("Error deleting review: $e");
-      rethrow;
-    }
+  Future<void> deleteReview(String reviewId, double rating, String restroomId) async {
+    final firestore = FirebaseFirestore.instance;
+    final restroomRef = firestore.collection('restrooms').doc(restroomId);
+    final reviewRef = _reviewCollection.doc(reviewId);
+
+    return firestore.runTransaction((transaction) async {
+      // 1. Read the current restroom data first
+      DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
+      if (!restroomSnapshot.exists) {
+        throw Exception("Restroom does not exist!");
+      }
+
+      // 2. Calculate new average
+      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
+      int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
+
+      int newTotal = currentTotal - 1;
+
+      // 3. Edge case: last review deleted → reset to 0
+      double newAvg = newTotal <= 0 ? 0.0 : ((currentAvg * currentTotal) - rating) / newTotal;
+
+      // 4. Delete review and update restroom rating simultaneously
+      transaction.delete(reviewRef);
+      transaction.update(restroomRef, {
+        'avgRating': newAvg,
+        'totalRatings': newTotal < 0 ? 0 : newTotal, 
+      });
+      await UserService().decrementReviewCount(reviewId);
+    });
   }
 
   // ฟังก์ชันคืนค่าคำบรรยายตามช่วงคะแนน 

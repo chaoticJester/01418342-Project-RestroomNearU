@@ -139,4 +139,14 @@ class UserService {
       'reviewIds': FieldValue.arrayUnion([reviewId]) // เพิ่ม ID รีวิวลงใน List
     });
   }
+
+  Future<void> decrementReviewCount(String reviewId) async {
+  final user = _auth.currentUser;
+  if (user == null) return;
+
+  await _userCollection.doc(user.uid).update({
+    'totalReviews': FieldValue.increment(-1),
+    'reviewIds': FieldValue.arrayRemove([reviewId]),
+  });
+}
 }
