@@ -37,7 +37,7 @@ class RequestService {
     });
   }
 
-    Future<RequestModel?> getRequestById(String requestId) async {
+  Future<RequestModel?> getRequestById(String requestId) async {
     try {
       DocumentSnapshot doc = await _requestCollection.doc(requestId).get();
       if (doc.exists) {

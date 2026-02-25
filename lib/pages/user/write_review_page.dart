@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:restroom_near_u/services/review_firestore.dart';
+import 'package:restroom_near_u/services/user_firestore.dart';
+import 'package:restroom_near_u/models/review_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens (ตรงกับ user_homepage / profile_page)
@@ -113,86 +119,141 @@ class _WriteReviewPageState extends State<WriteReviewPage>
     );
   }
 
+  Future<List<String>> _uploadPhotos(String reviewId) async {
+    final urls = <String>[];
+    for (final file in _selectedPhotos) {
+      final fileName = 'reviews/$reviewId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final ref = FirebaseStorage.instance.ref().child(fileName);
+      final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+      urls.add(await task.ref.getDownloadURL());
+    }
+    return urls;
+  }
+
   Future<void> _submitReview() async {
     if (overallRating == 0) {
       _showSnack('Please provide an overall rating', isError: true);
       return;
     }
+
     HapticFeedback.mediumImpact();
     setState(() => isSubmitting = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    setState(() => isSubmitting = false);
+    
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if(firebaseUser == null) {
+        _showSnack("You must be logged in to submit a review", isError: true);
+        setState(() {
+          isSubmitting = false;
+        });
+      }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: _C.bg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _C.green.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_circle_rounded,
-                  color: _C.green, size: 42),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Review Submitted',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _C.textDark),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Thank you for sharing your experience!',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: _C.textMid),
-            ),
-            const SizedBox(height: 20),
-            _SpringButton(
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+
+      final userModel = await UserService().getUserById(firebaseUser!.uid);
+
+      final reviewRef = FirebaseFirestore.instance.collection("reviews").doc();
+      final tempId = reviewRef.id;
+
+
+      List<String> uploadedUrls = [];
+      if(_selectedPhotos.isNotEmpty) {
+        uploadedUrls = await _uploadPhotos(tempId);
+      }
+
+      final review = ReviewModel(
+        reviewId: tempId,
+        restroomId: widget.restroomId,
+        reviewerId: firebaseUser.uid,
+        reviewerName: userModel?.displayName ?? firebaseUser.displayName ?? 'Anonymouse',
+        reviewerPhotoUrl: firebaseUser.photoURL ?? '',
+        rating: overallRating,
+        comment: _commentController.text.trim(),
+        photos: uploadedUrls,
+      );
+
+      await ReviewService().addReviewWithRatingUpdate(review);
+
+      await UserService().incrementReviewCount(tempId);
+
+      if (!mounted) return;
+      setState(() => isSubmitting = false);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: _C.bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_C.teal, _C.tealDark],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _C.tealDark.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4)),
-                  ],
+                  color: _C.green.withOpacity(0.12),
+                  shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text('Done',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                child: const Icon(Icons.check_circle_rounded,
+                    color: _C.green, size: 42),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Review Submitted',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: _C.textDark),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Thank you for sharing your experience!',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: _C.textMid),
+              ),
+              const SizedBox(height: 20),
+              _SpringButton(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_C.teal, _C.tealDark],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                          color: _C.tealDark.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text('Done',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if(!mounted) return;
+      setState(() {
+        isSubmitting = false;
+      });
+      _showSnack("Failed to submit review. Please try again.", isError: true);
+    }
   }
 
   @override
