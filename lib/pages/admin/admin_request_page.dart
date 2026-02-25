@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
+import 'package:restroom_near_u/utils/helpers.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -291,9 +292,7 @@ class _RequestCardState extends State<_RequestCard>
     final status   = r.status;
     final createdAt = r.createdAt.toDate();
 
-    final formattedDate =
-        '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}  '
-        '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
+    final formattedDate = AppHelpers.formatDateTime(createdAt);
 
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
@@ -531,8 +530,7 @@ class _RequestPopup extends StatelessWidget {
   Widget build(BuildContext context) {
     final r         = request.restroom;
     final createdAt = request.createdAt.toDate();
-    final formattedDate =
-        '${createdAt.day.toString().padLeft(2, '0')}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.year}';
+    final formattedDate = AppHelpers.formatDateOnly(createdAt);
     final hoursText = r.is24hrs
         ? '24 Hours'
         : (r.openTime != null && r.closeTime != null

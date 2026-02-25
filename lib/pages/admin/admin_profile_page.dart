@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import 'package:restroom_near_u/models/user_model.dart';
+import 'package:restroom_near_u/utils/helpers.dart';
 import 'package:restroom_near_u/services/user_firestore.dart';
 
 // ─────────────────────────────────────────────
@@ -499,7 +499,7 @@ class _AccountInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final memberSince =
-        createdAt != null ? DateFormat('MMM d, yyyy').format(createdAt!) : '—';
+        createdAt != null ? AppHelpers.formatDateOnly(createdAt!) : '—';
     return Column(
       children: [
         _InfoRow(

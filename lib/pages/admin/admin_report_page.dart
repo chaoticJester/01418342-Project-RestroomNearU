@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:restroom_near_u/utils/helpers.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -250,9 +251,7 @@ class _AdminReportPageState extends State<AdminReportPage>
 
     String formattedDate = '';
     if (createdAt != null && createdAt is Timestamp) {
-      final dt = createdAt.toDate();
-      formattedDate =
-          '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
+      formattedDate = AppHelpers.formatDateOnly(createdAt.toDate());
     }
 
     showModalBottomSheet(
@@ -575,10 +574,7 @@ class _ReportCardState extends State<_ReportCard>
 
     String formattedDate = '';
     if (createdAt != null && createdAt is Timestamp) {
-      final dt = createdAt.toDate();
-      formattedDate =
-          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}  '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      formattedDate = AppHelpers.formatDateTime(createdAt.toDate());
     }
 
     return GestureDetector(
