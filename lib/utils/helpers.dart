@@ -39,11 +39,29 @@ class AppHelpers {
     return degree * pi / 180;
   }
   
-  /// Format time from DateTime
+  /// Format time from DateTime — 24-hour HH:mm
   static String formatTime(DateTime dateTime) {
-    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final hour   = dateTime.hour.toString().padLeft(2, '0');
     final minute = dateTime.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  /// Format full date + time — dd-MM-yyyy HH:mm (24-hour)
+  static String formatDateTime(DateTime dateTime) {
+    final day    = dateTime.day.toString().padLeft(2, '0');
+    final month  = dateTime.month.toString().padLeft(2, '0');
+    final year   = dateTime.year.toString();
+    final hour   = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$day-$month-$year  $hour:$minute';
+  }
+
+  /// Format date only — dd-MM-yyyy
+  static String formatDateOnly(DateTime dateTime) {
+    final day   = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final year  = dateTime.year.toString();
+    return '$day-$month-$year';
   }
   
   /// Format date from DateTime
