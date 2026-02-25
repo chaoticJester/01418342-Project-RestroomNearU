@@ -6,6 +6,7 @@ import 'package:restroom_near_u/services/user_firestore.dart';
 import 'package:restroom_near_u/models/user_model.dart';
 import 'package:restroom_near_u/pages/admin/admin_request_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_profile_page.dart';
+import 'package:restroom_near_u/utils/helpers.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens (ตรงกับทั้ง project)
@@ -51,34 +52,14 @@ class _AdminHomePageState extends State<AdminHomePage>
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
 
-  // Recent Activity (mock)
-  final List<Map<String, dynamic>> _recentActivity = [
-    {'user': 'Pheeraphat Jumnong', 'action': 'submitted new toilet',        'time': '5 min ago', 'color': Color(0xFFE8753D)},
-    {'user': 'Admin',              'action': 'approved new toilet request', 'time': '8 min ago', 'color': Color(0xFF34A853)},
-    {'user': 'Admin',              'action': 'deleted fake toilet',         'time': '12 min ago','color': Color(0xFFB3261E)},
-    {'user': 'Admin',              'action': 'banned user @pasulol',        'time': '20 min ago','color': Color(0xFFB3261E)},
-    {'user': 'Somchai Dee',        'action': 'submitted new toilet',        'time': '1 hr ago',  'color': Color(0xFFE8753D)},
-  ];
+  // Recent Activity (real data from Firestore)
+  List<Map<String, dynamic>> _recentActivity = [];
 
-  // Most reviewed (mock)
-  final List<Map<String, dynamic>> _topToilets = [
-    {'name': 'Siam Paragon 3F',      'location': 'Siam Paragon',   'rating': 5.0, 'reviews': 189},
-    {'name': 'CentralWorld B1',      'location': 'CentralWorld',   'rating': 4.8, 'reviews': 152},
-    {'name': 'MBK 4F East Wing',     'location': 'MBK Center',     'rating': 4.7, 'reviews': 134},
-    {'name': 'Terminal21 2F',        'location': 'Terminal 21',    'rating': 4.6, 'reviews': 121},
-    {'name': 'Icon Siam 1F',         'location': 'Icon Siam',      'rating': 4.5, 'reviews': 98},
-    {'name': 'Emporium 3F',          'location': 'The Emporium',   'rating': 4.4, 'reviews': 87},
-  ];
+  // Most reviewed (real data from Firestore)
+  List<Map<String, dynamic>> _topToilets = [];
 
-  // Trending locations (mock)
-  final List<Map<String, dynamic>> _trendingLocations = [
-    {'name': 'Siam Area',     'searches': 1234, 'trend': 12, 'up': true},
-    {'name': 'Sukhumvit',     'searches': 987,  'trend': 8,  'up': true},
-    {'name': 'Silom',         'searches': 856,  'trend': 5,  'up': false},
-    {'name': 'Chatuchak',     'searches': 743,  'trend': 3,  'up': false},
-    {'name': 'Siam Paragon',  'searches': 698,  'trend': 15, 'up': true},
-    {'name': 'Asiatique',     'searches': 512,  'trend': 7,  'up': true},
-  ];
+  // Trending locations (real data from Firestore)
+  List<Map<String, dynamic>> _trendingLocations = [];
 
   @override
   void initState() {
@@ -149,6 +130,153 @@ class _AdminHomePageState extends State<AdminHomePage>
         if (mounted) setState(() => _activeUsers = snap.size);
       }),
     );
+
+    // ── Real-time stream: Recent Activity ────────────────────────────
+    _loadRecentActivity();
+
+    // ── Real-time stream: Top Toilets by Reviews ─────────────────────
+    _loadTopToilets();
+
+    // ── Real-time stream: Trending Locations ─────────────────────────
+    _loadTrendingLocations();
+  }
+
+  void _loadRecentActivity() {
+    // Combine requests and reports for recent activity
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('requests')
+          .orderBy('createdAt', descending: true)
+          .limit(10)
+          .snapshots()
+          .listen((snap) {
+        final activities = <Map<String, dynamic>>[];
+        
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          final userId = data['userId'] ?? '';
+          final status = data['status'] ?? 'pending';
+          final createdAt = data['createdAt'] as Timestamp?;
+          
+          Color activityColor;
+          String action;
+          
+          if (status == 'approved') {
+            activityColor = _C.green;
+            action = 'approved new toilet request';
+          } else if (status == 'rejected') {
+            activityColor = _C.red;
+            action = 'rejected toilet request';
+          } else {
+            activityColor = _C.orange;
+            action = 'submitted new toilet';
+          }
+          
+          activities.add({
+            'user': userId,
+            'action': action,
+            'time': createdAt != null 
+                ? _formatTimeAgo(createdAt.toDate()) 
+                : 'Recently',
+            'color': activityColor,
+          });
+        }
+        
+        if (mounted) {
+          setState(() {
+            _recentActivity = activities.take(5).toList();
+          });
+        }
+      }),
+    );
+  }
+
+  void _loadTopToilets() {
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('restrooms')
+          .orderBy('totalRatings', descending: true)
+          .limit(6)
+          .snapshots()
+          .listen((snap) {
+        final toilets = <Map<String, dynamic>>[];
+        
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          toilets.add({
+            'name': data['restroomName'] ?? 'Unknown',
+            'location': data['address'] ?? '',
+            'rating': (data['avgRating'] ?? 0.0).toDouble(),
+            'reviews': (data['totalRatings'] ?? 0).toInt(),
+          });
+        }
+        
+        if (mounted) {
+          setState(() {
+            _topToilets = toilets;
+          });
+        }
+      }),
+    );
+  }
+
+  void _loadTrendingLocations() {
+    // Get restrooms grouped by location (first part of address)
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('restrooms')
+          .snapshots()
+          .listen((snap) {
+        final Map<String, int> locationCounts = {};
+        
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          final address = data['address'] ?? '';
+          
+          // Extract main location (first part before comma)
+          final location = address.split(',').first.trim();
+          if (location.isNotEmpty) {
+            locationCounts[location] = (locationCounts[location] ?? 0) + 1;
+          }
+        }
+        
+        // Convert to list and sort by count
+        final locations = locationCounts.entries.map((e) {
+          return {
+            'name': e.key,
+            'searches': e.value,
+            'trend': (e.value * 0.1).round(), // Simple trend calculation
+            'up': true, // Always show as trending up for now
+          };
+        }).toList();
+        
+        locations.sort((a, b) => 
+          (b['searches'] as int).compareTo(a['searches'] as int));
+        
+        if (mounted) {
+          setState(() {
+            _trendingLocations = locations.take(6).toList();
+          });
+        }
+      }),
+    );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} hr ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return AppHelpers.formatDateOnly(dateTime);
+    }
   }
 
   @override
@@ -366,6 +494,29 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   // ── Recent Activity ───────────────────────────────────────────────────
   Widget _buildRecentActivity() {
+    if (_recentActivity.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _C.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _C.divider, width: 1),
+        ),
+        child: Center(
+          child: Column(
+            children: const [
+              Icon(Icons.history_rounded, size: 32, color: _C.textLight),
+              SizedBox(height: 8),
+              Text(
+                'No recent activity',
+                style: TextStyle(fontSize: 12, color: _C.textLight),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: _C.card,
@@ -444,10 +595,21 @@ class _AdminHomePageState extends State<AdminHomePage>
             ],
           ),
           const SizedBox(height: 2),
-          const Text('This week',
+          const Text('All time',
               style: TextStyle(fontSize: 9, color: _C.textLight)),
           const SizedBox(height: 10),
-          ..._topToilets.map((t) => _TopToiletRow(toilet: t)),
+          if (_topToilets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'No reviews yet',
+                  style: TextStyle(fontSize: 10, color: _C.textLight),
+                ),
+              ),
+            )
+          else
+            ..._topToilets.map((t) => _TopToiletRow(toilet: t)),
         ],
       ),
     );
@@ -486,10 +648,21 @@ class _AdminHomePageState extends State<AdminHomePage>
             ],
           ),
           const SizedBox(height: 2),
-          const Text('Most searched',
+          const Text('Most restrooms',
               style: TextStyle(fontSize: 9, color: _C.textLight)),
           const SizedBox(height: 10),
-          ..._trendingLocations.map((l) => _TrendingRow(location: l)),
+          if (_trendingLocations.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'No data yet',
+                  style: TextStyle(fontSize: 10, color: _C.textLight),
+                ),
+              ),
+            )
+          else
+            ..._trendingLocations.map((l) => _TrendingRow(location: l)),
         ],
       ),
     );
@@ -721,6 +894,8 @@ class _TopToiletRow extends StatelessWidget {
                     toilet['location'] as String,
                     style: const TextStyle(
                         fontSize: 8, color: _C.textLight),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -796,9 +971,11 @@ class _TrendingRow extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         color: _C.textDark),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '${location['searches']} searches',
+                    '${location['searches']} restrooms',
                     style: const TextStyle(
                         fontSize: 8, color: _C.textLight),
                   ),
@@ -824,9 +1001,7 @@ class _TrendingRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 2),
                   Text(
-                    isUp
-                        ? '+${location['trend']}%'
-                        : '-${location['trend']}%',
+                    '${location['trend']}',
                     style: TextStyle(
                         fontSize: 8,
                         fontWeight: FontWeight.w800,
