@@ -146,6 +146,7 @@ class _WriteReviewPageState extends State<WriteReviewPage>
         setState(() {
           isSubmitting = false;
         });
+        return;
       }
 
 

@@ -59,7 +59,7 @@ class AdminRequestPopup extends StatelessWidget {
     final requestId = requestData['id'] ?? '';
     try {
       await FirebaseFirestore.instance
-          .collection('restroom_requests')
+          .collection('requests')
           .doc(requestId)
           .update({'status': 'rejected'});
 

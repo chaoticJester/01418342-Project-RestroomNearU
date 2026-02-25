@@ -10,7 +10,7 @@ class ReviewService {
   Future<void> addReviewWithRatingUpdate(ReviewModel review) async {
     final firestore = FirebaseFirestore.instance;
     final restroomRef = firestore.collection('restrooms').doc(review.restroomId);
-    final reviewRef = _reviewCollection.doc(); // สร้าง ID ใหม่
+    final reviewRef = _reviewCollection.doc(review.reviewId); 
 
     return firestore.runTransaction((transaction) async {
       // 1. อ่านข้อมูลห้องน้ำปัจจุบันมาก่อน

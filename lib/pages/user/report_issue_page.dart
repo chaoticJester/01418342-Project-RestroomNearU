@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:restroom_near_u/models/report_model.dart';
+import 'package:restroom_near_u/services/report_firestore.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens (ตรงกับ user_homepage / profile_page)
@@ -97,82 +100,121 @@ class _ReportIssuePageState extends State<ReportIssuePage>
           isError: true);
       return;
     }
+
     HapticFeedback.mediumImpact();
     setState(() => isSubmitting = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    setState(() => isSubmitting = false);
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: _C.bg,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _C.green.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_circle_rounded,
-                  color: _C.green, size: 42),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Report Submitted',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _C.textDark),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Our team will review and take action soon.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: _C.textMid),
-            ),
-            const SizedBox(height: 20),
-            _SpringButton(
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+
+      // Resolve reporter info — hide if anonymous
+      final String reportedById    = firebaseUser?.uid ?? '';
+      final String reportedByName  = isAnonymous ? '' : (firebaseUser?.displayName ?? '');
+      final String reportedByEmail = isAnonymous
+          ? ''
+          : (_emailController.text.trim().isNotEmpty
+              ? _emailController.text.trim()
+              : firebaseUser?.email ?? '');
+
+      // Build the ReportModel
+      final reportService = ReportService();
+      final docRef = reportService.reportsCollection.doc(); // pre-generate ID
+
+      final report = ReportModel(
+        reportId:        docRef.id,
+        restroomId:      widget.restroomId,
+        restroomName:    widget.restroomName,
+        issueType:       selectedIssue!,
+        title:           ReportModel.titleFromIssueType(selectedIssue!),
+        description:     _descriptionController.text.trim(),
+        severity:        ReportModel.severityFromIssueType(selectedIssue!),
+        reportedById:    reportedById,
+        reportedByName:  reportedByName,
+        reportedByEmail: reportedByEmail,
+        isAnonymous:     isAnonymous,
+      );
+
+      await reportService.createReport(report);
+
+      if (!mounted) return;
+      setState(() => isSubmitting = false);
+
+      // Show success dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: _C.bg,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_C.teal, _C.tealDark],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _C.tealDark.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4)),
-                  ],
+                  color: _C.green.withOpacity(0.12),
+                  shape: BoxShape.circle,
                 ),
-                child: const Center(
-                  child: Text('Back to Home',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                child: const Icon(Icons.check_circle_rounded,
+                    color: _C.green, size: 42),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Report Submitted',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: _C.textDark),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Our team will review and take action soon.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: _C.textMid),
+              ),
+              const SizedBox(height: 20),
+              _SpringButton(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_C.teal, _C.tealDark],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                          color: _C.tealDark.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text('Back to Home',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isSubmitting = false);
+      _showSnack('Failed to submit report. Please try again.', isError: true);
+    }
   }
 
   @override
