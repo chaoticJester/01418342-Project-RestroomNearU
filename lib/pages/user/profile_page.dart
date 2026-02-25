@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
+import '../../utils/helpers.dart';
 import '../../models/review_model.dart';
 import '../../services/user_firestore.dart';
 import '../../services/review_firestore.dart';
@@ -649,7 +649,7 @@ class _AccountInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final memberSince = createdAt != null
-        ? DateFormat('MMM d, yyyy').format(createdAt!)
+        ? AppHelpers.formatDateOnly(createdAt!)
         : '—';
 
     return Column(
