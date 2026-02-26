@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
+import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 
 class AdminRequestPopup extends StatelessWidget {
   final Map<String, dynamic> requestData;
+  final String requestDocId; // ✅ The Firestore document ID passed in from the list page
 
-  const AdminRequestPopup({super.key, required this.requestData});
+  const AdminRequestPopup({
+    super.key,
+    required this.requestData,
+    required this.requestDocId,
+  });
 
   Future<void> _approveRequest(BuildContext context) async {
-    final requestId = requestData['id'] ?? '';
+    final requestId = requestDocId;
+
+    final newRestroomId =
+        FirebaseFirestore.instance.collection('restrooms').doc().id;
+
     try {
-      // Move to restrooms collection
       final restroom = RestroomModel(
-        restroomId: requestId,
+        restroomId: newRestroomId,
         restroomName: requestData['restroomName'] ?? '',
         address: requestData['address'] ?? '',
         latitude: (requestData['latitude'] ?? 0.0).toDouble(),
@@ -31,11 +40,10 @@ class AdminRequestPopup extends StatelessWidget {
 
       await RestroomService().createRestroom(restroom);
 
-      // Update request status
-      await FirebaseFirestore.instance
-          .collection('restroom_requests')
-          .doc(requestId)
-          .update({'status': 'approved'});
+      await RequestService().updateSpecificField(requestId, {
+        'status': 'approved',
+        'restroomId': newRestroomId,
+      });
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -56,12 +64,12 @@ class AdminRequestPopup extends StatelessWidget {
   }
 
   Future<void> _rejectRequest(BuildContext context) async {
-    final requestId = requestData['id'] ?? '';
+    final requestId = requestDocId; // ✅ Same fix here
+
     try {
-      await FirebaseFirestore.instance
-          .collection('requests')
-          .doc(requestId)
-          .update({'status': 'rejected'});
+      await RequestService().updateSpecificField(requestId, {
+        'status': 'rejected',
+      });
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -83,7 +91,7 @@ class AdminRequestPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final requestId = requestData['id'] ?? '';
+    final requestId = requestDocId;
     final restroomName = requestData['restroomName'] ?? '3rd floor Siam Paragon';
     final isFree = requestData['isFree'] ?? true;
     final price = requestData['price'];
@@ -103,7 +111,7 @@ class AdminRequestPopup extends StatelessWidget {
     if (createdAt != null && createdAt is Timestamp) {
       final dt = createdAt.toDate();
       formattedDate =
-          '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
+      '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
     }
 
     String hoursText = is24hrs ? '24 Hours' : '$openTime - $closeTime';
@@ -205,7 +213,7 @@ class AdminRequestPopup extends StatelessWidget {
                                   const SizedBox(height: 4),
                                   Text(
                                     hoursText,
-                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFFFFA4A4)),
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFFFFA4A4)),
                                   ),
                                 ],
                               ),
@@ -213,59 +221,11 @@ class AdminRequestPopup extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-
-                      // Map preview
-                      if (latitude != 0.0 && longitude != 0.0) ...[
-                        Container(
-                          height: 100,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFA4A4).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1)),
-                            ],
-                          ),
-                          child: Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  color: Colors.grey.shade200,
-                                  child: const Center(
-                                    child: Icon(Icons.map, size: 40, color: Colors.grey),
-                                  ),
-                                ),
-                              ),
-                              const Positioned(
-                                bottom: 6,
-                                right: 8,
-                                child: Text(
-                                  'Map Preview',
-                                  style: TextStyle(fontSize: 8, color: Colors.black45),
-                                ),
-                              ),
-                              const Positioned(
-                                top: 0, bottom: 0, left: 0, right: 0,
-                                child: Center(
-                                  child: Icon(Icons.location_on, color: Colors.red, size: 24),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+                      const SizedBox(height: 12),
 
                       // Photos
-                      Row(
-                        children: const [
-                          Icon(Icons.photo_outlined, size: 16, color: Colors.black),
-                          SizedBox(width: 6),
-                          Text('Photo (5)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black)),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
+                      const Text('Photos', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black)),
+                      const SizedBox(height: 8),
                       _buildPhotoGrid(photos),
                       const SizedBox(height: 16),
 
@@ -332,7 +292,7 @@ class AdminRequestPopup extends StatelessWidget {
     return Row(
       children: [
         ...displayPhotos.map(
-          (url) => Container(
+              (url) => Container(
             width: 80,
             height: 56,
             margin: const EdgeInsets.only(right: 8),
@@ -347,7 +307,6 @@ class AdminRequestPopup extends StatelessWidget {
             ),
           ),
         ),
-        // +N placeholder
         Container(
           width: 80,
           height: 56,

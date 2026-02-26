@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
+import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
 
 // ─────────────────────────────────────────────
@@ -488,9 +489,35 @@ class _RequestPopup extends StatelessWidget {
 
   Future<void> _approve(BuildContext context) async {
     try {
-      await RestroomService().createRestroom(request.restroom);
+      // Generate a brand-new Firestore ID for the restroom
+      final newRestroomId =
+          FirebaseFirestore.instance.collection('restrooms').doc().id;
+
+      // Copy the restroom from the request but with the new ID
+      final restroom = request.restroom.copyWith();
+      final restroomWithId = RestroomModel(
+        restroomId: newRestroomId,
+        restroomName: restroom.restroomName,
+        address: restroom.address,
+        latitude: restroom.latitude,
+        longitude: restroom.longitude,
+        openTime: restroom.openTime,
+        closeTime: restroom.closeTime,
+        isFree: restroom.isFree,
+        price: restroom.price,
+        is24hrs: restroom.is24hrs,
+        phoneNumber: restroom.phoneNumber,
+        amenities: restroom.amenities,
+        photos: restroom.photos,
+        createdBy: restroom.createdBy,
+      );
+
+      await RestroomService().createRestroom(restroomWithId);
       await requestService.updateSpecificField(
-          request.requestId, {'status': Status.approved.name});
+          request.requestId, {
+        'status': Status.approved.name,
+        'restroomId': newRestroomId, // link back to the created restroom
+      });
       if (context.mounted) {
         Navigator.pop(context);
         _snack(context, 'Request approved — toilet added!', _C.green);
@@ -534,8 +561,8 @@ class _RequestPopup extends StatelessWidget {
     final hoursText = r.is24hrs
         ? '24 Hours'
         : (r.openTime != null && r.closeTime != null
-            ? '${r.openTime} – ${r.closeTime}'
-            : 'N/A');
+        ? '${r.openTime} – ${r.closeTime}'
+        : 'N/A');
 
     return DraggableScrollableSheet(
       initialChildSize: 0.92,
@@ -634,11 +661,11 @@ class _RequestPopup extends StatelessWidget {
                         color: _C.card,
                         borderRadius: BorderRadius.circular(14),
                         border:
-                            Border.all(color: _C.divider, width: 1),
+                        Border.all(color: _C.divider, width: 1),
                       ),
                       child: Row(
                         mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
+                        MainAxisAlignment.spaceBetween,
                         children: [
                           Text(request.userId,
                               style: const TextStyle(
@@ -691,8 +718,8 @@ class _RequestPopup extends StatelessWidget {
                               horizontal: 20, vertical: 10),
                           decoration: BoxDecoration(
                             color: (request.status == Status.approved
-                                    ? _C.green
-                                    : _C.redLight)
+                                ? _C.green
+                                : _C.redLight)
                                 .withOpacity(0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -761,16 +788,16 @@ class _RequestPopup extends StatelessWidget {
     return Row(
       children: [
         ...displayPhotos.map((url) => Container(
-              width: 84,
-              height: 62,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: _C.divider,
-                borderRadius: BorderRadius.circular(10),
-                image: DecorationImage(
-                    image: NetworkImage(url), fit: BoxFit.cover),
-              ),
-            )),
+          width: 84,
+          height: 62,
+          margin: const EdgeInsets.only(right: 8),
+          decoration: BoxDecoration(
+            color: _C.divider,
+            borderRadius: BorderRadius.circular(10),
+            image: DecorationImage(
+                image: NetworkImage(url), fit: BoxFit.cover),
+          ),
+        )),
         Container(
           width: 84,
           height: 62,

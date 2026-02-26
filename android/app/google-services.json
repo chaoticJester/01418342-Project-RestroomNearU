@@ -12,7 +12,28 @@
           "package_name": "com.example.restroom_near_u"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "24992553222-8h5upt5anh9ka030sa17lhmivnmlb0mb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.restroom_near_u",
+            "certificate_hash": "82ba0b4704a3bf71252341f42037db23f3d23fe3"
+          }
+        },
+        {
+          "client_id": "24992553222-tr2jung8in4chmplt8p14rdfdmjrtq03.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.restroom_near_u",
+            "certificate_hash": "8a7cf68d0e992aebcb9231c88e6deb872256d8c7"
+          }
+        },
+        {
+          "client_id": "24992553222-2km9bqg2obd03ufh939evmaok3rf8hpk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDO7DKAmlwaS4bx1dUWI5C2jeThD4XR33s"
@@ -20,7 +41,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "24992553222-2km9bqg2obd03ufh939evmaok3rf8hpk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "24992553222-54oe8i1476a6l3rnf16i2evt826ec04p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.restroomNearu"
+              }
+            }
+          ]
         }
       }
     }
