@@ -135,8 +135,10 @@ class ReviewService {
 
     if (!snapshot.exists) return;
 
-    final List likedBy = snapshot.get('likedBy') ?? [];
+    final data = snapshot.data() as Map<String, dynamic>;
+    final List likedBy = data['likedBy'] ?? [];
     final bool alreadyLiked = likedBy.contains(userId);
+    final String reviewerId = data['reviewerId'] ?? '';
 
     await reviewRef.update({
       'totalLikes': FieldValue.increment(alreadyLiked ? -1 : 1),
@@ -144,6 +146,14 @@ class ReviewService {
           ? FieldValue.arrayRemove([userId]) 
           : FieldValue.arrayUnion([userId]),
     });
+
+    // ✅ Update totalHelpful on the reviewer's user doc
+    if (reviewerId.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(reviewerId)
+          .update({'totalHelpful': FieldValue.increment(alreadyLiked ? -1 : 1)});
+    }
   }
 
   // DELETE: ลบรีวิว

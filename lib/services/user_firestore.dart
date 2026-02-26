@@ -1,36 +1,32 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '/models/user_model.dart'; 
 
 class UserService {
   final CollectionReference _userCollection =
       FirebaseFirestore.instance.collection('users');
-  
-  // Instance ของ FirebaseAuth เพื่อดึงข้อมูลคนล็อกอินปัจจุบัน
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // CREATE / SYNC: สร้างข้อมูล User ลง Firestore เมื่อ Login ครั้งแรก
-  // ฟังก์ชันนี้ใช้เรียกหลังจาก Google Sign-In สำเร็จ
+  // CREATE / SYNC
   Future<void> syncUserWithFirestore() async {
     final User? firebaseUser = _auth.currentUser;
-
     if (firebaseUser == null) return;
 
     final DocumentReference docRef = _userCollection.doc(firebaseUser.uid);
     final DocumentSnapshot doc = await docRef.get();
 
-    // เช็คว่ามีข้อมูลใน Firestore หรือยัง?
     if (!doc.exists) {
-      // ถ้ายังไม่มี (เพิ่งสมัครใหม่) ให้สร้างข้อมูลเริ่มต้น
       final newUser = UserModel(
         userId: firebaseUser.uid,
         displayName: firebaseUser.displayName ?? 'New User',
         email: firebaseUser.email ?? '',
-        role: Role.user, // เริ่มต้นเป็น User ธรรมดา
+        role: Role.user,
         totalReviews: 0,
         reviewIds: [],
+        photoUrl: firebaseUser.photoURL,
       );
-
       await docRef.set(newUser.toMap());
       print("New user created in Firestore");
     } else {
@@ -42,8 +38,7 @@ class UserService {
     await _userCollection.doc(user.userId).set(user.toMap());
   }
 
-  // READ: อ่านข้อมูล User
-  // 1. ดึงข้อมูล User ปัจจุบันแบบ Realtime (ใช้แสดงในหน้า Profile)
+  // READ
   Stream<UserModel?> getCurrentUserStream() {
     final user = _auth.currentUser;
     if (user == null) return Stream.value(null);
@@ -56,8 +51,6 @@ class UserService {
     });
   }
 
-  // 2. Stream ข้อมูล User ตาม UID (ใช้ใน main.dart แทน FutureBuilder)
-  // จะ emit ทันทีที่ document ถูกสร้าง ไม่ต้อง signOut เมื่อยังไม่มี doc
   Stream<UserModel?> getUserStream(String userId) {
     return _userCollection.doc(userId).snapshots().map((doc) {
       if (doc.exists && doc.data() != null) {
@@ -67,7 +60,6 @@ class UserService {
     });
   }
 
-  // 3. ดึงข้อมูล User อื่น (เช่น ดูโปรไฟล์คนรีวิว)
   Future<UserModel?> getUserById(String userId) async {
     try {
       final doc = await _userCollection.doc(userId).get();
@@ -81,17 +73,13 @@ class UserService {
     }
   }
 
-  // 3. ค้นหาข้อมูล User จาก Email
   Future<UserModel?> getUserByEmail(String email) async {
     try {
-      // ค้นหาใน collection 'users' ที่ฟิลด์ 'email' ตรงกับที่กรอกมา
       final snapshot = await _userCollection
           .where('email', isEqualTo: email)
-          .limit(1) // เอาแค่คนแรกที่เจอ
+          .limit(1)
           .get();
-
       if (snapshot.docs.isNotEmpty) {
-        // ถ้าเจอข้อมูล ให้แปลงเป็น UserModel
         return UserModel.fromMap(snapshot.docs.first.data() as Map<String, dynamic>);
       }
       return null;
@@ -101,7 +89,6 @@ class UserService {
     }
   }
 
-  // 3. ตรวจสอบว่าเป็น Admin หรือไม่? 
   Future<bool> isAdmin() async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -114,39 +101,103 @@ class UserService {
     return false;
   }
 
-  // UPDATE: แก้ไขข้อมูล
-  
-  // 1. แก้ไขโปรไฟล์ (ชื่อ)
+  // UPDATE
+
   Future<void> updateDisplayName(String newName) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    await _userCollection.doc(user.uid).update({
-      'displayName': newName,
-    });
-    
-    // อัปเดตใน Firebase Auth ด้วย (เพื่อให้ตรงกัน)
+    await _userCollection.doc(user.uid).update({'displayName': newName});
     await user.updateDisplayName(newName);
   }
 
-  // 2. อัปเดตจำนวนรีวิว (ใช้เรียกเมื่อ User เขียนรีวิวเสร็จ)
+  /// ✅ NEW: Upload a profile photo to Firebase Storage and save URL to Firestore
+  Future<String?> uploadProfilePhoto(File imageFile) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos/${user.uid}.jpg');
+
+      final uploadTask = await ref.putFile(
+        imageFile,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+      // Save URL to Firestore
+      await _userCollection.doc(user.uid).update({'photoUrl': downloadUrl});
+
+      // Also update Firebase Auth profile
+      await user.updatePhotoURL(downloadUrl);
+
+      return downloadUrl;
+    } catch (e) {
+      print("Error uploading profile photo: $e");
+      return null;
+    }
+  }
+
+  /// ✅ NEW: Remove profile photo
+  Future<void> removeProfilePhoto() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // Delete from Storage
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos/${user.uid}.jpg');
+      await ref.delete();
+    } catch (_) {
+      // File might not exist, ignore
+    }
+
+    // Remove URL from Firestore
+    await _userCollection.doc(user.uid).update({'photoUrl': FieldValue.delete()});
+    await user.updatePhotoURL(null);
+  }
+
+  Future<void> incrementAddedCount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _userCollection.doc(user.uid).update({
+      'totalAdded': FieldValue.increment(1),
+    });
+  }
+
+  Future<void> incrementHelpfulCount(String userId) async {
+    await _userCollection.doc(userId).update({
+      'totalHelpful': FieldValue.increment(1),
+    });
+  }
+
+  Future<void> decrementHelpfulCount(String userId) async {
+    await _userCollection.doc(userId).update({
+      'totalHelpful': FieldValue.increment(-1),
+    });
+  }
+
   Future<void> incrementReviewCount(String reviewId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     await _userCollection.doc(user.uid).update({
       'totalReviews': FieldValue.increment(1),
-      'reviewIds': FieldValue.arrayUnion([reviewId]) // เพิ่ม ID รีวิวลงใน List
+      'reviewIds': FieldValue.arrayUnion([reviewId]),
     });
   }
 
   Future<void> decrementReviewCount(String reviewId) async {
-  final user = _auth.currentUser;
-  if (user == null) return;
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-  await _userCollection.doc(user.uid).update({
-    'totalReviews': FieldValue.increment(-1),
-    'reviewIds': FieldValue.arrayRemove([reviewId]),
-  });
-}
+    await _userCollection.doc(user.uid).update({
+      'totalReviews': FieldValue.increment(-1),
+      'reviewIds': FieldValue.arrayRemove([reviewId]),
+    });
+  }
 }
