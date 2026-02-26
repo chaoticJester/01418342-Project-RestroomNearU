@@ -6,7 +6,10 @@ class UserModel {
   final String email;
   final Role role;
   final int totalReviews;
-  final List<String> reviewIds; 
+  final int totalAdded;
+  final int totalHelpful;
+  final List<String> reviewIds;
+  final String? photoUrl; // ✅ NEW: profile photo URL
 
   UserModel({
     required this.userId,
@@ -14,35 +17,40 @@ class UserModel {
     required this.email,
     this.role = Role.user, 
     this.totalReviews = 0,
-    this.reviewIds = const [], 
+    this.totalAdded = 0,
+    this.totalHelpful = 0,
+    this.reviewIds = const [],
+    this.photoUrl,
   });
 
-  // 1. ฟังก์ชันแปลงข้อมูลจาก Firestore (Map) มาเป็น Class ของเรา
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
       userId: map['userId'] ?? '',
       displayName: map['displayName'] ?? '',
       email: map['email'] ?? '',
-      // แปลง String 'admin' กลับมาเป็น Enum Role.admin
       role: Role.values.firstWhere(
         (e) => e.name == map['role'], 
         orElse: () => Role.user
       ),
       totalReviews: map['totalReviews']?.toInt() ?? 0,
-      // แปลง List dynamic เป็น List<String>
+      totalAdded: map['totalAdded']?.toInt() ?? 0,
+      totalHelpful: map['totalHelpful']?.toInt() ?? 0,
       reviewIds: List<String>.from(map['reviewIds'] ?? []),
+      photoUrl: map['photoUrl'] as String?,
     );
   }
 
-  // 2. ฟังก์ชันแปลง Class ของเราเป็น Map เพื่อบันทึกลง Firestore
   Map<String, dynamic> toMap() {
     return {
       'userId': userId,
       'displayName': displayName,
       'email': email,
-      'role': role.name, // แปลง Enum เป็น String ('user', 'admin') ก่อนเก็บ
+      'role': role.name,
       'totalReviews': totalReviews,
+      'totalAdded': totalAdded,
+      'totalHelpful': totalHelpful,
       'reviewIds': reviewIds,
+      if (photoUrl != null) 'photoUrl': photoUrl,
     };
   }
 }
