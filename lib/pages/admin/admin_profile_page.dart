@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/models/user_model.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
 import 'package:restroom_near_u/services/user_firestore.dart';
+import 'package:restroom_near_u/widgets/profile_avatar_widget.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens — matches project theme
@@ -124,6 +125,7 @@ class _AdminProfilePageState extends State<AdminProfilePage>
                       child: _HeroHeader(
                         displayName: user.displayName,
                         email: user.email,
+                        photoUrl: user.photoUrl,
                         onBack: () => Navigator.of(context).pop(),
                       ),
                     ),
@@ -172,12 +174,14 @@ class _AdminProfilePageState extends State<AdminProfilePage>
 class _HeroHeader extends StatelessWidget {
   final String displayName;
   final String email;
+  final String? photoUrl;
   final VoidCallback onBack;
 
   const _HeroHeader({
     required this.displayName,
     required this.email,
     required this.onBack,
+    this.photoUrl,
   });
 
   @override
@@ -199,23 +203,19 @@ class _HeroHeader extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const SizedBox(height: 32),
-                Stack(
+Stack(
                   children: [
-                    Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.25),
-                        border: Border.all(
-                            color: _C.adminGold.withOpacity(0.85), width: 3),
-                      ),
-                      child: const Icon(Icons.person_rounded,
-                          size: 44, color: Colors.white),
+                    // ✅ Profile avatar with photo upload
+                    ProfileAvatarWidget(
+                      photoUrl: photoUrl,
+                      size: 84,
+                      showEditButton: true,
+                      isAdmin: true,
                     ),
+                    // ADMIN badge
                     Positioned(
                       bottom: 0,
-                      right: 0,
+                      left: 0,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
