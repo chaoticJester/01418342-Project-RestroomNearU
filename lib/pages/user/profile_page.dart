@@ -6,6 +6,7 @@ import '../../utils/helpers.dart';
 import '../../models/review_model.dart';
 import '../../services/user_firestore.dart';
 import '../../services/review_firestore.dart';
+import '../../widgets/profile_avatar_widget.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -135,6 +136,7 @@ class _ProfilePageState extends State<ProfilePage>
                           child: _HeroHeader(
                             displayName: user.displayName,
                             email: user.email,
+                            photoUrl: user.photoUrl,
                             onBack: () => Navigator.of(context).pop(),
                           ),
                         ),
@@ -143,9 +145,8 @@ class _ProfilePageState extends State<ProfilePage>
                         SliverToBoxAdapter(
                           child: _StatsRow(
                             totalReviews: user.totalReviews,
-                            totalAdded: 20,
-                            totalHelpful: reviews.fold(
-                                0, (s, r) => s + r.helpfulCount),
+                            totalAdded: user.totalAdded,
+                            totalHelpful: user.totalHelpful,
                           ),
                         ),
 
@@ -220,12 +221,14 @@ class _ProfilePageState extends State<ProfilePage>
 class _HeroHeader extends StatelessWidget {
   final String displayName;
   final String email;
+  final String? photoUrl;
   final VoidCallback onBack;
 
   const _HeroHeader({
     required this.displayName,
     required this.email,
     required this.onBack,
+    this.photoUrl,
   });
 
   @override
@@ -247,18 +250,12 @@ class _HeroHeader extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const SizedBox(height: 28),
-                    // Avatar circle
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.25),
-                        border: Border.all(
-                            color: Colors.white.withOpacity(0.6), width: 2.5),
-                      ),
-                      child: const Icon(Icons.person_rounded,
-                          size: 42, color: Colors.white),
+                    // ✅ Profile avatar with upload support
+                    ProfileAvatarWidget(
+                      photoUrl: photoUrl,
+                      size: 84,
+                      showEditButton: true,
+                      isAdmin: false,
                     ),
                     const SizedBox(height: 12),
                     Text(
