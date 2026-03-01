@@ -42,9 +42,11 @@ class ReviewService {
         'avgRating': newAvg,
         'totalRatings': newTotal,
       });
-
-      await UserService().incrementReviewCount(reviewRef.id);
     });
+
+    // ✅ Increment review count AFTER transaction completes
+    // (cannot await inside a Firestore transaction)
+    await UserService().incrementReviewCount(reviewRef.id);
   }
 
   // READ: อ่านข้อมูลรีวิว
@@ -84,15 +86,17 @@ class ReviewService {
   Stream<List<ReviewModel>> getReviewsByRestroomId(String restroomId) {
     return _reviewCollection
         .where('restroomId', isEqualTo: restroomId)
-        .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final list = snapshot.docs.map((doc) {
         return ReviewModel.fromMap(
           doc.data() as Map<String, dynamic>,
           doc.id,
         );
       }).toList();
+      // Sort in Dart — avoids needing a Firestore composite index
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return list;
     });
   }
 
