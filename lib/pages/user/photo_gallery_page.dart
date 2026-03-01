@@ -1,4 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+// ─────────────────────────────────────────────
+// Design tokens — matches restroom_detail_page
+// ─────────────────────────────────────────────
+class _C {
+  static const bg        = Color(0xFFF5F1E8);
+  static const card      = Color(0xFFFFFDFA);
+  static const pink      = Color(0xFFEC9B9B);
+  static const pinkLight = Color(0xFFF5D4D4);
+  static const mint      = Color(0xFFA8D5D5);
+  static const mintDark  = Color(0xFF88B5B5);
+  static const textDark  = Color(0xFF2C2C2C);
+  static const textMid   = Color(0xFF6B6B6B);
+  static const textLight = Color(0xFFA5A5A5);
+  static const divider   = Color(0xFFE8E4DB);
+}
 
 class PhotoGalleryPage extends StatefulWidget {
   final String restroomId;
@@ -21,7 +38,7 @@ class PhotoGalleryPage extends StatefulWidget {
 class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
   late int currentIndex;
   late PageController _pageController;
-  bool isFullscreen = false;
+  bool _isFullscreen = false;
 
   @override
   void initState() {
@@ -37,214 +54,80 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
   }
 
   void _toggleFullscreen() {
-    setState(() {
-      isFullscreen = !isFullscreen;
-    });
+    HapticFeedback.lightImpact();
+    setState(() => _isFullscreen = !_isFullscreen);
+  }
+
+  void _goTo(int index) {
+    setState(() => currentIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: isFullscreen ? Colors.black : const Color(0xFFFCF9EA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header (hidden in fullscreen)
-            if (!isFullscreen) _buildHeader(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _isFullscreen
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: _isFullscreen ? Colors.black : _C.bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── Header ──────────────────────────────────
+              if (!_isFullscreen) _buildHeader(),
 
-            // Main Photo View
-            Expanded(
-              child: Stack(
-                children: [
-                  // PageView for swipeable photos
-                  PageView.builder(
-                    controller: _pageController,
-                    itemCount: widget.photos.length,
-                    onPageChanged: (index) {
-                      setState(() {
-                        currentIndex = index;
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      return GestureDetector(
-                        onTap: _toggleFullscreen,
-                        child: Container(
-                          color: isFullscreen ? Colors.black : const Color(0xFFFCF9EA),
-                          child: InteractiveViewer(
-                            minScale: 0.5,
-                            maxScale: 4.0,
-                            child: Center(
-                              child: Hero(
-                                tag: 'photo_${widget.photos[index]}',
-                                child: Image.network(
-                                  widget.photos[index],
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[300],
-                                      child: const Icon(
-                                        Icons.broken_image,
-                                        size: 80,
-                                        color: Colors.grey,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+              // ── Main photo viewer ────────────────────────
+              Expanded(child: _buildPhotoViewer()),
 
-                  // Navigation Arrows
-                  if (!isFullscreen && widget.photos.length > 1) ...[
-                    // Previous Arrow
-                    if (currentIndex > 0)
-                      Positioned(
-                        left: 16,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                _pageController.previousPage(
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeInOut,
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.9),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 8,
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.chevron_left,
-                                  size: 32,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Next Arrow
-                    if (currentIndex < widget.photos.length - 1)
-                      Positioned(
-                        right: 16,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeInOut,
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.9),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 8,
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.chevron_right,
-                                  size: 32,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-
-                  // Photo Counter (Overlay)
-                  if (!isFullscreen)
-                    Positioned(
-                      bottom: 16,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.7),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${currentIndex + 1} / ${widget.photos.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            // Photo Info (hidden in fullscreen)
-            if (!isFullscreen) _buildPhotoInfo(),
-
-            // Thumbnail Grid (hidden in fullscreen)
-            if (!isFullscreen) _buildThumbnailGrid(),
-          ],
+              // ── Counter + thumbnails ─────────────────────
+              if (!_isFullscreen) _buildBottom(),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  // ── Header ──────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: const Color(0xFFBADFDB),
+      padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: _C.mint,
+      ),
       child: Row(
         children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => Navigator.pop(context),
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.arrow_back, size: 20),
+          // Back button
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.pop(context);
+            },
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.9),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
+              child: const Icon(Icons.arrow_back, size: 20, color: _C.textDark),
             ),
           ),
           const SizedBox(width: 12),
+
+          // Title
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,14 +136,16 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
                   'Photos',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
                   ),
                 ),
                 Text(
                   widget.restroomName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black87,
+                    color: Colors.white.withOpacity(0.85),
+                    fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -268,32 +153,20 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
               ],
             ),
           ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                // TODO: Add photo action
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Add Photo'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '+ Add Photo',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+
+          // Photo count badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${currentIndex + 1} / ${widget.photos.length}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
           ),
@@ -302,193 +175,255 @@ class _PhotoGalleryPageState extends State<PhotoGalleryPage> {
     );
   }
 
-  Widget _buildPhotoInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Photo Details',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
+  // ── Main photo viewer ────────────────────────────────────────────────
+  Widget _buildPhotoViewer() {
+    return Stack(
+      children: [
+        // Swipeable pages
+        PageView.builder(
+          controller: _pageController,
+          itemCount: widget.photos.length,
+          onPageChanged: (i) => setState(() => currentIndex = i),
+          itemBuilder: (_, i) => GestureDetector(
+            onTap: _toggleFullscreen,
+            child: Container(
+              color: _isFullscreen ? Colors.black : _C.bg,
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4.0,
+                child: Center(
+                  child: Image.network(
+                    widget.photos[i],
+                    fit: BoxFit.contain,
+                    loadingBuilder: (_, child, progress) {
+                      if (progress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          value: progress.expectedTotalBytes != null
+                              ? progress.cumulativeBytesLoaded /
+                                  progress.expectedTotalBytes!
+                              : null,
+                          color: _C.mint,
+                          strokeWidth: 2,
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image_rounded,
+                            size: 64,
+                            color: _isFullscreen
+                                ? Colors.white38
+                                : _C.textLight),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Failed to load photo',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _isFullscreen
+                                ? Colors.white54
+                                : _C.textLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'Uploaded by',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'John Doe',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+        ),
+
+        // Fullscreen hint (tap to exit)
+        if (_isFullscreen)
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Tap to exit fullscreen',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500),
                 ),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'Upload date',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '2 days ago',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    // TODO: Like photo
-                  },
-                  icon: const Icon(Icons.thumb_up_outlined, size: 18),
-                  label: const Text(
-                    'Like this photo',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFBADFDB),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+
+        // Fullscreen back button
+        if (_isFullscreen)
+          Positioned(
+            top: 12,
+            left: 12,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.pop(context);
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
                 ),
+                child: const Icon(Icons.arrow_back,
+                    size: 20, color: Colors.white),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () {
-                  // TODO: Report photo
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Report Photo'),
-                      duration: Duration(seconds: 1),
+            ),
+          ),
+
+        // Left / Right nav arrows
+        if (!_isFullscreen && widget.photos.length > 1) ...[
+          if (currentIndex > 0)
+            Positioned(
+              left: 12,
+              top: 0,
+              bottom: 0,
+              child: Center(child: _NavArrow(
+                icon: Icons.chevron_left,
+                onTap: () => _goTo(currentIndex - 1),
+              )),
+            ),
+          if (currentIndex < widget.photos.length - 1)
+            Positioned(
+              right: 12,
+              top: 0,
+              bottom: 0,
+              child: Center(child: _NavArrow(
+                icon: Icons.chevron_right,
+                onTap: () => _goTo(currentIndex + 1),
+              )),
+            ),
+        ],
+      ],
+    );
+  }
+
+  // ── Bottom: dot indicators + thumbnail strip ─────────────────────────
+  Widget _buildBottom() {
+    return Container(
+      color: _C.card,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Dot indicators
+          if (widget.photos.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.photos.length, (i) {
+                  final selected = i == currentIndex;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: selected ? 20 : 6,
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: selected ? _C.mint : _C.divider,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+          // Thumbnail strip
+          if (widget.photos.length > 1)
+            SizedBox(
+              height: 80,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                itemCount: widget.photos.length,
+                itemBuilder: (_, i) {
+                  final selected = i == currentIndex;
+                  return GestureDetector(
+                    onTap: () => _goTo(i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 56,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selected ? _C.mint : Colors.transparent,
+                          width: 2.5,
+                        ),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: _C.mint.withOpacity(0.4),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          widget.photos[i],
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: _C.divider,
+                            child: const Icon(Icons.broken_image_rounded,
+                                size: 20, color: _C.textLight),
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 },
-                icon: const Icon(Icons.flag_outlined, size: 18),
-                label: const Text(
-                  'Report',
-                  style: TextStyle(fontSize: 13),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  side: const BorderSide(color: Colors.red),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
               ),
-            ],
-          ),
+            ),
+
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
+}
 
-  Widget _buildThumbnailGrid() {
-    return Container(
-      height: 120,
-      color: Colors.white,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'All Photos',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
+// ── Nav arrow button ─────────────────────────────────────────────────
+class _NavArrow extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _NavArrow({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: widget.photos.length,
-              itemBuilder: (context, index) {
-                final isSelected = index == currentIndex;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      currentIndex = index;
-                    });
-                    _pageController.animateToPage(
-                      index,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  },
-                  child: Container(
-                    width: 70,
-                    height: 70,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFBADFDB)
-                            : Colors.grey.withOpacity(0.3),
-                        width: isSelected ? 3 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        widget.photos[index],
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[300],
-                            child: const Icon(
-                              Icons.broken_image,
-                              size: 24,
-                              color: Colors.grey,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+          ],
+        ),
+        child: Icon(icon, size: 28, color: _C.textDark),
       ),
     );
   }
