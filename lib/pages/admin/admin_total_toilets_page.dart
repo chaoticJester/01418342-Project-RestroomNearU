@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/pages/user/restroom_detail_page.dart';
+import 'admin_edit_toilet_page.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
 
 // ─────────────────────────────────────────────
@@ -397,6 +398,10 @@ class _AdminTotalToiletsPageState extends State<AdminTotalToiletsPage>
               child: _ToiletCard(
                 restroom: filtered[index],
                 isOpen: _isOpen(filtered[index]),
+                onEdit: () => Navigator.push(
+                  context,
+                  _smoothRoute(AdminEditToiletPage(restroom: filtered[index])),
+                ),
                 onDelete: () => _confirmDelete(context, filtered[index]),
               ),
             );
@@ -443,11 +448,13 @@ class _ToiletCard extends StatefulWidget {
   final RestroomModel restroom;
   final bool isOpen;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const _ToiletCard({
     required this.restroom,
     required this.isOpen,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
@@ -643,7 +650,7 @@ class _ToiletCardState extends State<_ToiletCard>
               // ── Divider ──
               Divider(color: _C.divider, height: 1, thickness: 1),
 
-              // ── Footer: stats + delete ──
+              // ── Footer: stats + edit + delete ──
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -661,7 +668,6 @@ class _ToiletCardState extends State<_ToiletCard>
                           fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(width: 12),
-                    // Amenities count
                     Icon(Icons.check_circle_outline_rounded,
                         size: 13, color: _C.textLight),
                     const SizedBox(width: 4),
@@ -673,6 +679,35 @@ class _ToiletCardState extends State<_ToiletCard>
                           fontWeight: FontWeight.w500),
                     ),
                     const Spacer(),
+                    // Edit button
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        widget.onEdit();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _C.tealDark.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.edit_rounded,
+                                size: 13, color: _C.tealDark),
+                            SizedBox(width: 4),
+                            Text('Edit',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: _C.tealDark)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     // Delete button
                     GestureDetector(
                       onTap: () {
