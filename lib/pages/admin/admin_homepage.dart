@@ -149,7 +149,7 @@ class _AdminHomePageState extends State<AdminHomePage>
           .orderBy('createdAt', descending: true)
           .limit(10)
           .snapshots()
-          .listen((snap) {
+          .asyncMap((snap) async {
         final activities = <Map<String, dynamic>>[];
         
         for (var doc in snap.docs) {
@@ -171,9 +171,18 @@ class _AdminHomePageState extends State<AdminHomePage>
             activityColor = _C.orange;
             action = 'submitted new toilet';
           }
+
+          // Fetch display name instead of userId
+          String userName = 'User';
+          try {
+            final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+            if (userDoc.exists) {
+              userName = userDoc.data()?['displayName'] ?? 'User';
+            }
+          } catch (_) {}
           
           activities.add({
-            'user': userId,
+            'user': userName,
             'action': action,
             'time': createdAt != null 
                 ? _formatTimeAgo(createdAt.toDate()) 
@@ -181,7 +190,9 @@ class _AdminHomePageState extends State<AdminHomePage>
             'color': activityColor,
           });
         }
-        
+        return activities;
+      })
+      .listen((activities) {
         if (mounted) {
           setState(() {
             _recentActivity = activities.take(5).toList();

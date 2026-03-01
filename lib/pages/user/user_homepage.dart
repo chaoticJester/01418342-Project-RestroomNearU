@@ -119,6 +119,22 @@ class _UserHomePageState extends State<UserHomePage>
   _MarkerTier _currentTier = _tierForZoom(_initialZoom);
   Timer? _zoomDebounce;
 
+  // Search
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  List<RestroomModel> get _filteredRestrooms {
+    if (_searchQuery.isEmpty) return restrooms;
+    final q = _searchQuery.toLowerCase();
+    return restrooms
+        .where((r) => r.restroomName.toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() => _searchQuery = val);
+    _buildAllMarkers();
+  }
+
   // Cached bitmaps keyed by "restroomId:tierIndex:selected"
   final Map<String, BitmapDescriptor> _bitmapCache = {};
 
@@ -203,6 +219,7 @@ class _UserHomePageState extends State<UserHomePage>
     _listEntryController.dispose();
     _sheetController.dispose();
     _popupCtrl.dispose();
+    _searchController.dispose();
     super.dispose();
   }
   // ── Camera move — debounced zoom rebuild ────────────────────────────────
@@ -224,7 +241,7 @@ class _UserHomePageState extends State<UserHomePage>
   // ── Build / update all markers for current tier ─────────────────────────
   Future<void> _buildAllMarkers() async {
     final Map<MarkerId, Marker> fresh = {};
-    for (final r in restrooms) {
+    for (final r in _filteredRestrooms) {
       final isSelected = _selectedRestroom?.restroomId == r.restroomId;
       final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
       final id = MarkerId(r.restroomId);
@@ -516,11 +533,13 @@ class _UserHomePageState extends State<UserHomePage>
               builder: (context, scrollController) {
                 return _BottomSheetContent(
                   scrollController: scrollController,
-                  restrooms: restrooms,
+                  restrooms: _filteredRestrooms,
                   listEntryController: _listEntryController,
                   onHandleTap: _toggleSheet,
                   onRestroomTap: _onMarkerTap,
-                  onLocateTap: _goToCurrentLocation, // 🌟 ส่งฟังก์ชันไปให้ปุ่ม
+                  onLocateTap: _goToCurrentLocation,
+                  onSearchChanged: _onSearchChanged,
+                  searchController: _searchController,
                 );
               },
             ),
@@ -742,6 +761,8 @@ class _BottomSheetContent extends StatelessWidget {
   final VoidCallback onHandleTap;
   final ValueChanged<RestroomModel> onRestroomTap;
   final VoidCallback onLocateTap;
+  final ValueChanged<String> onSearchChanged;
+  final TextEditingController searchController;
 
   const _BottomSheetContent({
     required this.scrollController,
@@ -750,6 +771,8 @@ class _BottomSheetContent extends StatelessWidget {
     required this.onHandleTap,
     required this.onRestroomTap,
     required this.onLocateTap,
+    required this.onSearchChanged,
+    required this.searchController,
   });
 
   @override
@@ -809,7 +832,10 @@ class _BottomSheetContent extends StatelessWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-              child: _SearchBar(),
+              child: _SearchBar(
+                onChanged: onSearchChanged,
+                controller: searchController,
+              ),
             ),
           ),
           SliverToBoxAdapter(
@@ -873,6 +899,11 @@ class _BottomSheetContent extends StatelessWidget {
 // Search Bar
 // ─────────────────────────────────────────────
 class _SearchBar extends StatelessWidget {
+  final ValueChanged<String> onChanged;
+  final TextEditingController controller;
+
+  const _SearchBar({required this.onChanged, required this.controller});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -887,6 +918,8 @@ class _SearchBar extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: TextField(
+            controller: controller,
+            onChanged: onChanged,
             style: TextStyle(
                 fontSize: 14, color: _C.textDark, fontWeight: FontWeight.w500),
             decoration: InputDecoration(

@@ -59,7 +59,9 @@ class _AdminRequestPageState extends State<AdminRequestPage>
 
   Stream<List<RequestModel>> _getRequestsStream() {
     return _requestService.getRequestsStream().map((list) {
-      if (_selectedFilter == 'Approved') {
+      if (_selectedFilter == 'Pending') {
+        return list.where((r) => r.status == Status.pending).toList();
+      } else if (_selectedFilter == 'Approved') {
         return list.where((r) => r.status == Status.approved).toList();
       } else if (_selectedFilter == 'Rejected') {
         return list.where((r) => r.status == Status.rejected).toList();
@@ -142,51 +144,56 @@ class _AdminRequestPageState extends State<AdminRequestPage>
   }
 
   Widget _buildFilterTabs() {
-    final filters = ['All', 'Approved', 'Rejected'];
-    return Row(
-      children: filters.map((f) {
-        final isSelected = _selectedFilter == f;
-        Color chipColor;
-        if (f == 'Approved') chipColor = _C.green;
-        else if (f == 'Rejected') chipColor = _C.redLight;
-        else chipColor = _C.tealDark;
+    final filters = ['All', 'Pending', 'Approved', 'Rejected'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: filters.map((f) {
+          final isSelected = _selectedFilter == f;
+          Color chipColor;
+          if (f == 'Pending') chipColor = _C.orange;
+          else if (f == 'Approved') chipColor = _C.green;
+          else if (f == 'Rejected') chipColor = _C.redLight;
+          else chipColor = _C.tealDark;
 
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            setState(() => _selectedFilter = f);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? chipColor : Colors.white.withOpacity(0.8),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                    color: isSelected
-                        ? chipColor.withOpacity(0.3)
-                        : Colors.black.withOpacity(0.05),
-                    blurRadius: isSelected ? 8 : 4,
-                    offset: const Offset(0, 2)),
-              ],
-              border: Border.all(
-                color: isSelected ? chipColor : _C.divider,
-                width: 1,
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedFilter = f);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? chipColor : Colors.white.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                      color: isSelected
+                          ? chipColor.withOpacity(0.3)
+                          : Colors.black.withOpacity(0.05),
+                      blurRadius: isSelected ? 8 : 4,
+                      offset: const Offset(0, 2)),
+                ],
+                border: Border.all(
+                  color: isSelected ? chipColor : _C.divider,
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                f,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : _C.textMid,
+                ),
               ),
             ),
-            child: Text(
-              f,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: isSelected ? Colors.white : _C.textMid,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -267,6 +274,7 @@ class _RequestCardState extends State<_RequestCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _scale;
+  String? _userName;
 
   @override
   void initState() {
@@ -278,6 +286,16 @@ class _RequestCardState extends State<_RequestCard>
     );
     _scale = Tween(begin: 1.0, end: 0.97)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+    _fetchUserName();
+  }
+
+  Future<void> _fetchUserName() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.request.userId).get();
+      if (doc.exists && mounted) {
+        setState(() => _userName = doc.data()?['displayName']);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -307,6 +325,7 @@ class _RequestCardState extends State<_RequestCard>
           builder: (_) => _RequestPopup(
             request: r,
             requestService: widget.requestService,
+            userName: _userName,
           ),
         );
       },
@@ -381,7 +400,7 @@ class _RequestCardState extends State<_RequestCard>
                         Icons.location_on_rounded, restroom.address),
                     const SizedBox(height: 5),
                     _infoRow(
-                        Icons.person_rounded, r.userId),
+                        Icons.person_rounded, _userName ?? r.userId),
 
                     // Photos count
                     if (restroom.photos.isNotEmpty) ...[
@@ -483,9 +502,10 @@ class _RequestCardState extends State<_RequestCard>
 class _RequestPopup extends StatelessWidget {
   final RequestModel request;
   final RequestService requestService;
+  final String? userName;
 
   const _RequestPopup(
-      {required this.request, required this.requestService});
+      {required this.request, required this.requestService, this.userName});
 
   Future<void> _approve(BuildContext context) async {
     try {
@@ -667,7 +687,7 @@ class _RequestPopup extends StatelessWidget {
                         mainAxisAlignment:
                         MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(request.userId,
+                          Text(userName ?? request.userId,
                               style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
+import 'package:restroom_near_u/services/report_firestore.dart';
+import 'package:restroom_near_u/models/report_model.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -32,6 +34,7 @@ class AdminReportPage extends StatefulWidget {
 
 class _AdminReportPageState extends State<AdminReportPage>
     with SingleTickerProviderStateMixin {
+  final ReportService _reportService = ReportService();
   String _selectedFilter = 'All';
 
   late AnimationController _enterCtrl;
@@ -53,19 +56,15 @@ class _AdminReportPageState extends State<AdminReportPage>
     super.dispose();
   }
 
-  Stream<List<Map<String, dynamic>>> _getReportsStream() {
-    Query query = FirebaseFirestore.instance
-        .collection('reports')
-        .orderBy('createdAt', descending: true);
-    if (_selectedFilter == 'Reviewed') {
-      query = query.where('reviewed', isEqualTo: true);
-    } else if (_selectedFilter == 'Pending') {
-      query = query.where('reviewed', isEqualTo: false);
-    }
-    return query.snapshots().map((snap) => snap.docs
-        .map((doc) =>
-            {'id': doc.id, ...doc.data() as Map<String, dynamic>})
-        .toList());
+  Stream<List<ReportModel>> _getReportsStream() {
+    return _reportService.getReportsStream().map((list) {
+      if (_selectedFilter == 'Reviewed') {
+        return list.where((r) => r.reviewed).toList();
+      } else if (_selectedFilter == 'Pending') {
+        return list.where((r) => !r.reviewed).toList();
+      }
+      return list;
+    });
   }
 
   @override
@@ -180,7 +179,7 @@ class _AdminReportPageState extends State<AdminReportPage>
 
   // ── Report List ───────────────────────────────────────────────────────
   Widget _buildReportList() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
+    return StreamBuilder<List<ReportModel>>(
       stream: _getReportsStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -239,20 +238,17 @@ class _AdminReportPageState extends State<AdminReportPage>
 
   // ── Report Detail Bottom Sheet ────────────────────────────────────────
   void _showReportDetail(
-      BuildContext context, Map<String, dynamic> report) {
-    final reportId      = report['id'] ?? '';
-    final title         = report['title'] ?? 'Untitled Report';
-    final reportedBy    = report['reportedByName'] ?? 'Unknown';
-    final reportedEmail = report['reportedByEmail'] ?? '';
-    final description   = report['description'] ?? '';
-    final severity      = report['severity'] ?? 'low';
-    final restroomName  = report['restroomName'] ?? '';
-    final createdAt     = report['createdAt'];
+      BuildContext context, ReportModel report) {
+    final reportId      = report.reportId;
+    final title         = report.title;
+    final reportedBy    = report.reportedByName;
+    final reportedEmail = report.reportedByEmail;
+    final description   = report.description;
+    final severity      = report.severity;
+    final restroomName  = report.restroomName;
+    final createdAt     = report.createdAt;
 
-    String formattedDate = '';
-    if (createdAt != null && createdAt is Timestamp) {
-      formattedDate = AppHelpers.formatDateOnly(createdAt.toDate());
-    }
+    String formattedDate = AppHelpers.formatDateOnly(createdAt);
 
     showModalBottomSheet(
       context: context,
@@ -469,10 +465,7 @@ class _AdminReportPageState extends State<AdminReportPage>
   Future<void> _markReviewed(
       BuildContext context, String reportId) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('reports')
-          .doc(reportId)
-          .update({'reviewed': true});
+      await _reportService.markAsReviewed(reportId);
       if (context.mounted) {
         Navigator.pop(context);
         _snack(context, 'Report marked as reviewed.', _C.green);
@@ -487,10 +480,7 @@ class _AdminReportPageState extends State<AdminReportPage>
   Future<void> _dismissReport(
       BuildContext context, String reportId) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('reports')
-          .doc(reportId)
-          .delete();
+      await _reportService.deleteReport(reportId);
       if (context.mounted) {
         Navigator.pop(context);
         _snack(context, 'Report dismissed.', _C.redLight);
@@ -517,7 +507,7 @@ class _AdminReportPageState extends State<AdminReportPage>
 // Report Card
 // ─────────────────────────────────────────────
 class _ReportCard extends StatefulWidget {
-  final Map<String, dynamic> report;
+  final ReportModel report;
   final VoidCallback onTap;
   const _ReportCard({required this.report, required this.onTap});
 
@@ -548,11 +538,11 @@ class _ReportCardState extends State<_ReportCard>
     super.dispose();
   }
 
-  Color _severityColor(String severity) {
-    switch (severity.toLowerCase()) {
-      case 'high':
+  Color _severityColor(ReportSeverity severity) {
+    switch (severity) {
+      case ReportSeverity.high:
         return _C.redLight;
-      case 'medium':
+      case ReportSeverity.medium:
         return _C.yellow;
       default:
         return _C.textLight;
@@ -562,20 +552,17 @@ class _ReportCardState extends State<_ReportCard>
   @override
   Widget build(BuildContext context) {
     final r            = widget.report;
-    final title        = r['title'] ?? 'Untitled Report';
-    final reportedBy   = r['reportedByName'] ?? 'Unknown';
-    final description  = r['description'] ?? '';
-    final severity     = r['severity'] ?? 'low';
-    final reviewed     = r['reviewed'] ?? false;
-    final restroomName = r['restroomName'] ?? '';
-    final photoCount   = (r['photos'] as List?)?.length ?? 0;
-    final createdAt    = r['createdAt'];
+    final title        = r.title;
+    final reportedBy   = r.reportedByName;
+    final description  = r.description;
+    final severity     = r.severity;
+    final reviewed     = r.reviewed;
+    final restroomName = r.restroomName;
+    final photoCount   = r.photos.length;
+    final createdAt    = r.createdAt;
     final severityColor = _severityColor(severity);
 
-    String formattedDate = '';
-    if (createdAt != null && createdAt is Timestamp) {
-      formattedDate = AppHelpers.formatDateTime(createdAt.toDate());
-    }
+    String formattedDate = AppHelpers.formatDateTime(createdAt);
 
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
@@ -732,19 +719,19 @@ class _ReportCardState extends State<_ReportCard>
 // Severity Badge
 // ─────────────────────────────────────────────
 class _SeverityBadge extends StatelessWidget {
-  final String severity;
+  final ReportSeverity severity;
   const _SeverityBadge({required this.severity});
 
   @override
   Widget build(BuildContext context) {
     Color color;
     String label;
-    switch (severity.toLowerCase()) {
-      case 'high':
+    switch (severity) {
+      case ReportSeverity.high:
         color = _C.redLight;
         label = 'High';
         break;
-      case 'medium':
+      case ReportSeverity.medium:
         color = _C.yellow;
         label = 'Medium';
         break;
