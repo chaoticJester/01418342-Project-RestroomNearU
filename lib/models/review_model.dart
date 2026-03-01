@@ -13,6 +13,7 @@ class ReviewModel {
   final DateTime updatedAt;      // When last edited
   final int totalLikes;
   final int helpfulCount;
+  final List<String> likedBy;
   final List<String> photos;
 
   ReviewModel({
@@ -28,6 +29,7 @@ class ReviewModel {
     DateTime? updatedAt,
     this.totalLikes = 0,
     this.helpfulCount = 0,
+    this.likedBy = const [],
     this.photos = const [],
   }) : 
     timestamp = timestamp ?? DateTime.now(),
@@ -57,6 +59,7 @@ class ReviewModel {
           : reviewTime,
       totalLikes: (map['totalLikes'] ?? 0).toInt(),
       helpfulCount: (map['helpfulCount'] ?? 0).toInt(),
+      likedBy: List<String>.from(map['likedBy'] ?? []),
       photos: List<String>.from(map['photos'] ?? []),
     );
   }
@@ -75,6 +78,7 @@ class ReviewModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
       'totalLikes': totalLikes,
       'helpfulCount': helpfulCount,
+      'likedBy': likedBy,
       'photos': photos,
     };
   }
