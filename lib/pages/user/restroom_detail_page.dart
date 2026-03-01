@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/restroom_model.dart';
@@ -49,11 +51,18 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   bool isOpen = true;
   String distance = "...";
   String selectedFilter = 'Recent';
-  final Set<String> helpfulReviewIds = {};
+  // Optimistic liked state — overrides r.likedBy until Firestore stream catches up
+  final Map<String, bool> _likedByMe = {};
+  final Set<String> _pendingLike = {}; // debounce guard
   bool _isUploadingPhoto = false;
+  String? _currentUserId;
 
   // Live restroom data (avgRating / totalRatings update when reviews come in)
   late RestroomModel _restroom;
+
+  // Stream subscriptions — stored so we can cancel on dispose
+  StreamSubscription<DocumentSnapshot>? _restroomSub;
+  StreamSubscription<List<ReviewModel>>? _reviewsSub;
 
   late AnimationController _enterCtrl;
   late Animation<double> _fadeAnim;
@@ -69,6 +78,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   void initState() {
     super.initState();
     _restroom = widget.restroom;   // start with passed-in snapshot
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
@@ -79,6 +89,8 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
   @override
   void dispose() {
+    _restroomSub?.cancel();
+    _reviewsSub?.cancel();
     _enterCtrl.dispose();
     super.dispose();
   }
@@ -86,18 +98,28 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   void _loadData() async {
     isOpen = RestroomService().checkIfOpen(widget.restroom);
 
+    // Cancel any existing subscriptions before creating new ones
+    // (prevents duplicates when _loadData is called again after writing a review)
+    _restroomSub?.cancel();
+    _reviewsSub?.cancel();
+
     Position position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
       )
     );
+    if (!mounted) return;
 
     double userLat = position.latitude;
     double userLng = position.longitude;
-    distance = RestroomService().getDistance(userLat, userLng, widget.restroom.latitude, widget.restroom.longitude);
+    setState(() {
+      distance = RestroomService().getDistance(
+          userLat, userLng,
+          widget.restroom.latitude, widget.restroom.longitude);
+    });
 
     // Stream live restroom doc so avgRating/totalRatings stay current
-    FirebaseFirestore.instance
+    _restroomSub = FirebaseFirestore.instance
         .collection('restrooms')
         .doc(widget.restroom.restroomId)
         .snapshots()
@@ -110,15 +132,52 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       }
     });
 
-    ReviewService().getReviewsByRestroomId(widget.restroom.restroomId).listen((data) {
-      if (mounted) {
-        setState(() {
-          reviews = data;
-          starDistribution = _calculateStarDistribution(data);
-          _sortReviews(selectedFilter);
-        });
-      }
+    _reviewsSub = ReviewService()
+        .getReviewsByRestroomId(widget.restroom.restroomId)
+        .listen((data) {
+      if (!mounted) return;
+      final dist = _calculateStarDistribution(data);
+      final sorted = List<ReviewModel>.from(data);
+      _applySortInPlace(sorted, selectedFilter);
+      setState(() {
+        reviews = sorted;
+        starDistribution = dist;
+      });
     });
+  }
+
+  // Single source of truth for sort logic — used by both stream listener and sort sheet
+  void _applySortInPlace(List<ReviewModel> list, String filter) {
+    switch (filter) {
+      case 'Highest Rating':
+        list.sort((a, b) => b.rating.compareTo(a.rating)); break;
+      case 'Lowest Rating':
+        list.sort((a, b) => a.rating.compareTo(b.rating)); break;
+      case 'Most Helpful':
+        list.sort((a, b) => b.totalLikes.compareTo(a.totalLikes)); break;
+      default: // 'Recent'
+        list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    }
+  }
+
+  Future<void> _toggleHelpful(ReviewModel review) async {
+    final uid = _currentUserId;
+    if (uid == null || _pendingLike.contains(review.reviewId)) return;
+
+    final alreadyLiked = _likedByMe[review.reviewId] ?? review.likedBy.contains(uid);
+
+    // Optimistic UI update
+    setState(() {
+      _pendingLike.add(review.reviewId);
+      _likedByMe[review.reviewId] = !alreadyLiked;
+    });
+    HapticFeedback.lightImpact();
+
+    try {
+      await ReviewService().toggleLikeReview(review.reviewId, uid);
+    } finally {
+      if (mounted) setState(() => _pendingLike.remove(review.reviewId));
+    }
   }
 
   // Count how many reviews gave each star rating (1–5)
@@ -134,16 +193,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   void _sortReviews(String filter) {
     setState(() {
       selectedFilter = filter;
-      switch (filter) {
-        case 'Recent':
-          reviews.sort((a, b) => b.timestamp.compareTo(a.timestamp)); break;
-        case 'Highest Rating':
-          reviews.sort((a, b) => b.rating.compareTo(a.rating)); break;
-        case 'Lowest Rating':
-          reviews.sort((a, b) => a.rating.compareTo(b.rating)); break;
-        case 'Most Helpful':
-          reviews.sort((a, b) => b.helpfulCount.compareTo(a.helpfulCount)); break;
-      }
+      _applySortInPlace(reviews, filter);
     });
   }
 
@@ -913,15 +963,9 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             const SizedBox(height: 12),
             ...reviews.map((r) => _ReviewCard(
                   review: r,
-                  isHelpful: helpfulReviewIds.contains(r.reviewId),
-                  onHelpfulTap: () => setState(() {
-                    if (helpfulReviewIds.contains(r.reviewId)) {
-                      helpfulReviewIds.remove(r.reviewId);
-                    } else {
-                      helpfulReviewIds.add(r.reviewId);
-                      HapticFeedback.lightImpact();
-                    }
-                  }),
+                  isHelpful: _likedByMe[r.reviewId] ?? r.likedBy.contains(_currentUserId ?? ''),
+                  isPending: _pendingLike.contains(r.reviewId),
+                  onHelpfulTap: () => _toggleHelpful(r),
                   onReadMore: () => _showFullReview(r),
                 )),
           ],
@@ -1342,17 +1386,230 @@ class _ActionBtnState extends State<_ActionBtn>
 }
 
 // ─────────────────────────────────────────────
+// Review photo lightbox
+// ─────────────────────────────────────────────
+void _showPhotoFocus(BuildContext context, List<String> photos, int initialIndex) {
+  showDialog(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (_) => _PhotoFocusDialog(photos: photos, initialIndex: initialIndex),
+  );
+}
+
+class _PhotoFocusDialog extends StatefulWidget {
+  final List<String> photos;
+  final int initialIndex;
+  const _PhotoFocusDialog({required this.photos, required this.initialIndex});
+
+  @override
+  State<_PhotoFocusDialog> createState() => _PhotoFocusDialogState();
+}
+
+class _PhotoFocusDialogState extends State<_PhotoFocusDialog> {
+  late int _current;
+  late PageController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+    _ctrl = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(0),
+      child: Stack(
+        children: [
+          // Dismiss on background tap
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(color: Colors.transparent),
+          ),
+
+          // Photo pager
+          PageView.builder(
+            controller: _ctrl,
+            itemCount: widget.photos.length,
+            onPageChanged: (i) => setState(() => _current = i),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Center(
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4.0,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.network(
+                        widget.photos[i],
+                        fit: BoxFit.contain,
+                        loadingBuilder: (_, child, progress) {
+                          if (progress == null) return child;
+                          return SizedBox(
+                            width: 200,
+                            height: 200,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                                color: _C.mint,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 200,
+                          height: 200,
+                          decoration: BoxDecoration(
+                            color: _C.divider,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(Icons.broken_image_rounded,
+                              size: 48, color: _C.textLight),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Close button
+          Positioned(
+            top: 48,
+            right: 16,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.pop(context);
+              },
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded,
+                    size: 20, color: Colors.white),
+              ),
+            ),
+          ),
+
+          // Left arrow
+          if (widget.photos.length > 1 && _current > 0)
+            Positioned(
+              left: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _ctrl.previousPage(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeInOut);
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.chevron_left,
+                        size: 28, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+
+          // Right arrow
+          if (widget.photos.length > 1 && _current < widget.photos.length - 1)
+            Positioned(
+              right: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _ctrl.nextPage(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeInOut);
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.chevron_right,
+                        size: 28, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+
+          // Counter pill
+          if (widget.photos.length > 1)
+            Positioned(
+              bottom: 48,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_current + 1} / ${widget.photos.length}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // Review card
 // ─────────────────────────────────────────────
 class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
   final bool isHelpful;
+  final bool isPending;
   final VoidCallback onHelpfulTap;
   final VoidCallback onReadMore;
 
   const _ReviewCard({
     required this.review,
     required this.isHelpful,
+    this.isPending = false,
     required this.onHelpfulTap,
     required this.onReadMore,
   });
@@ -1404,8 +1661,16 @@ class _ReviewCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.person_rounded,
-                    size: 20, color: _C.pink),
+                child: review.reviewerPhotoUrl.isNotEmpty
+                    ? ClipOval(
+                        child: Image.network(
+                          review.reviewerPhotoUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.person_rounded, size: 20, color: _C.pink),
+                        ),
+                      )
+                    : const Icon(Icons.person_rounded, size: 20, color: _C.pink),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1491,6 +1756,37 @@ class _ReviewCard extends StatelessWidget {
                   fontSize: 12, color: _C.textMid, height: 1.5),
               maxLines: 3,
               overflow: TextOverflow.ellipsis),
+          // Review photos (if any)
+          if (review.photos.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: review.photos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) => GestureDetector(
+                  onTap: () => _showPhotoFocus(context, review.photos, i),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      review.photos[i],
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 72,
+                        height: 72,
+                        color: _C.divider,
+                        child: const Icon(Icons.broken_image_rounded,
+                            color: _C.textLight, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           // Footer
           Row(
@@ -1523,16 +1819,24 @@ class _ReviewCard extends StatelessWidget {
                         : null,
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(
-                      isHelpful
-                          ? Icons.thumb_up_rounded
-                          : Icons.thumb_up_outlined,
-                      size: 12,
-                      color: isHelpful ? _C.pink : _C.textLight,
-                    ),
+                    isPending
+                        ? SizedBox(
+                            width: 12, height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: isHelpful ? _C.pink : _C.textLight,
+                            ),
+                          )
+                        : Icon(
+                            isHelpful
+                                ? Icons.thumb_up_rounded
+                                : Icons.thumb_up_outlined,
+                            size: 12,
+                            color: isHelpful ? _C.pink : _C.textLight,
+                          ),
                     const SizedBox(width: 4),
                     Text(
-                      'Helpful (${review.helpfulCount + (isHelpful ? 1 : 0)})',
+                      'Helpful (${review.totalLikes})',
                       style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
