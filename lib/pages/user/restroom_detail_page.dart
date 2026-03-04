@@ -11,8 +11,10 @@ import '../../services/review_firestore.dart';
 import 'photo_gallery_page.dart';
 import 'report_issue_page.dart';
 import 'write_review_page.dart';
-import 'navigation_page.dart'; // ✅ Added import
+import 'navigation_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../services/user_firestore.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens - Figma inspired theme
@@ -45,6 +47,7 @@ class RestroomDetailPage extends StatefulWidget {
 class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
+  final _userService = UserService();
   List<ReviewModel> reviews = [];
   Map<int, int> starDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
   bool isOpen = true;
@@ -69,13 +72,36 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   @override
   void initState() {
     super.initState();
-    _restroom = widget.restroom;   // start with passed-in snapshot
+    _restroom = widget.restroom;
+    _loadFavoriteState();
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
+  }
+
+  Future<void> _loadFavoriteState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = await _userService.getUserById(uid);
+    if (user != null && mounted) {
+      setState(() {
+        isFavorite = user.favoriteRestrooms.contains(widget.restroom.restroomId);
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.mediumImpact();
+    final newVal = !isFavorite;
+    setState(() => isFavorite = newVal);
+    if (newVal) {
+      await _userService.addFavoriteRestroom(widget.restroom.restroomId);
+    } else {
+      await _userService.removeFavoriteRestroom(widget.restroom.restroomId);
+    }
   }
 
   @override
@@ -383,13 +409,9 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
         // Favourite button
         Positioned(
           top: 52, right: 12,
-          child: _CircleButton(
-            icon: isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            iconColor: isFavorite ? _C.red : _C.textDark,
-            onTap: () {
-              HapticFeedback.lightImpact();
-              setState(() => isFavorite = !isFavorite);
-            },
+          child: _FavouriteButton(
+            isFavorite: isFavorite,
+            onTap: _toggleFavorite,
           ),
         ),
       ],
@@ -1637,6 +1659,123 @@ class _PhotoSourceButton extends StatelessWidget {
                     color: color)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Animated Favourite button (top-right of header)
+// Tappable, toggles locally, never saved
+// ─────────────────────────────────────────────
+class _FavouriteButton extends StatefulWidget {
+  final bool isFavorite;
+  final Future<void> Function() onTap;
+  const _FavouriteButton({required this.isFavorite, required this.onTap});
+
+  @override
+  State<_FavouriteButton> createState() => _FavouriteButtonState();
+}
+
+class _FavouriteButtonState extends State<_FavouriteButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scaleAnim;
+  late Animation<double> _burstAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    // Heart pops to 1.35 then settles back to 1.0
+    _scaleAnim = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35)
+          .chain(CurveTween(curve: Curves.easeOut)), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.90)
+          .chain(CurveTween(curve: Curves.easeIn)), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.90, end: 1.0)
+          .chain(CurveTween(curve: Curves.elasticOut)), weight: 30),
+    ]).animate(_ctrl);
+    // Burst ring fades out
+    _burstAnim = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  void _handleTap() {
+    widget.onTap();
+    _ctrl.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _handleTap,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) {
+          return SizedBox(
+            width: 56, height: 56,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Burst ring
+                if (_ctrl.isAnimating)
+                  Opacity(
+                    opacity: (1 - _burstAnim.value).clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scale: 0.6 + _burstAnim.value * 0.8,
+                      child: Container(
+                        width: 56, height: 56,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: widget.isFavorite
+                                ? _C.red.withOpacity(0.5)
+                                : _C.textLight.withOpacity(0.3),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                // Circle background
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: widget.isFavorite
+                        ? _C.red.withOpacity(0.12)
+                        : Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.18),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+                // Heart icon with scale animation
+                Transform.scale(
+                  scale: _scaleAnim.value,
+                  child: Icon(
+                    widget.isFavorite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    size: 24,
+                    color: widget.isFavorite ? _C.red : _C.textDark,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
