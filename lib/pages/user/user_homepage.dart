@@ -1210,9 +1210,9 @@ class _RestroomCardState extends State<_RestroomCard>
 }
 
 // ─────────────────────────────────────────────
-// Filter Tab Bar (Nearby / Favorites)
+// Filter Tab Bar (Nearby / Favorites) — sliding indicator
 // ─────────────────────────────────────────────
-class _FilterTabBar extends StatelessWidget {
+class _FilterTabBar extends StatefulWidget {
   final String activeTab;
   final int nearbyCount;
   final int favCount;
@@ -1226,120 +1226,178 @@ class _FilterTabBar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: _C.searchFill,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          _Tab(
-            label: 'Nearby',
-            icon: Icons.location_on_rounded,
-            count: nearbyCount,
-            isActive: activeTab == 'Nearby',
-            activeColor: _C.tealDark,
-            onTap: () => onTabChanged('Nearby'),
-          ),
-          _Tab(
-            label: 'Favorites',
-            icon: Icons.favorite_rounded,
-            count: favCount,
-            isActive: activeTab == 'Favorites',
-            activeColor: const Color(0xFFD77A7A),
-            onTap: () => onTabChanged('Favorites'),
-          ),
-        ],
-      ),
-    );
-  }
+  State<_FilterTabBar> createState() => _FilterTabBarState();
 }
 
-class _Tab extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final int count;
-  final bool isActive;
-  final Color activeColor;
-  final VoidCallback onTap;
+class _FilterTabBarState extends State<_FilterTabBar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
 
-  const _Tab({
-    required this.label,
-    required this.icon,
-    required this.count,
-    required this.isActive,
-    required this.activeColor,
-    required this.onTap,
-  });
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: widget.activeTab == 'Favorites' ? 1.0 : 0.0,
+    );
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(_FilterTabBar old) {
+    super.didUpdateWidget(old);
+    if (old.activeTab != widget.activeTab) {
+      widget.activeTab == 'Favorites' ? _ctrl.forward() : _ctrl.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: isActive ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    )
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: isActive ? activeColor : _C.textLight,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isActive ? activeColor : _C.textLight,
-                ),
-              ),
-              if (count > 0) ...[
-                const SizedBox(width: 5),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? activeColor.withOpacity(0.15)
-                        : _C.pill.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: isActive ? activeColor : _C.textLight,
+    const activeRed = Color(0xFFD77A7A);
+    final isNearby = widget.activeTab == 'Nearby';
+
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: _C.searchFill,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final totalW = box.maxWidth;
+          final pillW  = totalW / 2;
+          return AnimatedBuilder(
+            animation: _anim,
+            builder: (context, _) {
+              final pillLeft = _anim.value * pillW;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // ── sliding white pill (behind labels) ──
+                  Positioned(
+                    top: 4, bottom: 4,
+                    left: pillLeft + 4,
+                    width: pillW - 8,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.10),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ],
-          ),
-        ),
+                  // ── tap targets + labels (always on top) ──
+                  Positioned.fill(
+                    child: Row(
+                      children: [
+                        // Nearby
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              widget.onTabChanged('Nearby');
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.location_on_rounded,
+                                    size: 15,
+                                    color: isNearby ? _C.tealDark : _C.textLight),
+                                const SizedBox(width: 6),
+                                Text('Nearby',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isNearby ? FontWeight.w700 : FontWeight.w500,
+                                      color: isNearby ? _C.tealDark : _C.textLight,
+                                    )),
+                                if (widget.nearbyCount > 0) ...[
+                                  const SizedBox(width: 5),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isNearby
+                                          ? _C.tealDark.withOpacity(0.14)
+                                          : _C.pill.withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text('${widget.nearbyCount}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: isNearby ? _C.tealDark : _C.textLight,
+                                        )),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Favorites
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              widget.onTabChanged('Favorites');
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.favorite_rounded,
+                                    size: 15,
+                                    color: !isNearby ? activeRed : _C.textLight),
+                                const SizedBox(width: 6),
+                                Text('Favorites',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: !isNearby ? FontWeight.w700 : FontWeight.w500,
+                                      color: !isNearby ? activeRed : _C.textLight,
+                                    )),
+                                if (widget.favCount > 0) ...[
+                                  const SizedBox(width: 5),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: !isNearby
+                                          ? activeRed.withOpacity(0.14)
+                                          : _C.pill.withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text('${widget.favCount}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: !isNearby ? activeRed : _C.textLight,
+                                        )),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
