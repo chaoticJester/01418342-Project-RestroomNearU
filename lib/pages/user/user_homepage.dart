@@ -3,9 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/restroom_model.dart';
 import '../../services/restroom_firestore.dart';
+import '../../services/user_firestore.dart';
 import 'restroom_detail_page.dart';
+import 'navigation_page.dart';
 import 'package:geolocator/geolocator.dart';
 
 // ─────────────────────────────────────────────
@@ -122,12 +125,56 @@ class _UserHomePageState extends State<UserHomePage>
   // Search
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  // Filter tab: 'Nearby' or 'Favorites'
+  String _activeTab = 'Nearby';
+
+  // Favorites — loaded from Firestore, synced on toggle
+  final Set<String> _favoriteIds = {};
+  final _userService = UserService();
+
+  Future<void> _loadFavorites() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = await _userService.getUserById(uid);
+    if (user != null && mounted) {
+      setState(() {
+        _favoriteIds
+          ..clear()
+          ..addAll(user.favoriteRestrooms);
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite(String restroomId) async {
+    HapticFeedback.lightImpact();
+    final isFav = _favoriteIds.contains(restroomId);
+    // Optimistic update — UI responds instantly
+    setState(() {
+      if (isFav) {
+        _favoriteIds.remove(restroomId);
+      } else {
+        _favoriteIds.add(restroomId);
+      }
+    });
+    // Persist to Firestore
+    if (isFav) {
+      await _userService.removeFavoriteRestroom(restroomId);
+    } else {
+      await _userService.addFavoriteRestroom(restroomId);
+    }
+  }
+
   List<RestroomModel> get _filteredRestrooms {
-    if (_searchQuery.isEmpty) return restrooms;
-    final q = _searchQuery.toLowerCase();
-    return restrooms
-        .where((r) => r.restroomName.toLowerCase().contains(q))
-        .toList();
+    var list = restrooms;
+    if (_activeTab == 'Favorites') {
+      list = list.where((r) => _favoriteIds.contains(r.restroomId)).toList();
+    }
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((r) => r.restroomName.toLowerCase().contains(q)).toList();
+    }
+    return list;
   }
 
   void _onSearchChanged(String val) {
@@ -175,6 +222,7 @@ class _UserHomePageState extends State<UserHomePage>
       }
     });
     
+    _loadFavorites();
     _checkLocationPermission();
   }
 
@@ -504,6 +552,13 @@ class _UserHomePageState extends State<UserHomePage>
                     _smoothRoute(RestroomDetailPage(restroom: _selectedRestroom!)),
                   );
                 },
+                onGoNav: () {
+                  _dismissPopup();
+                  Navigator.push(
+                    context,
+                    _smoothRoute(NavigationPage(restroom: _selectedRestroom!)),
+                  );
+                },
               ),
 
             // ── Add New Restroom pill ─────────────────────────
@@ -540,6 +595,10 @@ class _UserHomePageState extends State<UserHomePage>
                   onLocateTap: _goToCurrentLocation,
                   onSearchChanged: _onSearchChanged,
                   searchController: _searchController,
+                  activeTab: _activeTab,
+                  onTabChanged: (tab) => setState(() => _activeTab = tab),
+                  favoriteIds: _favoriteIds,
+                  onToggleFavorite: _toggleFavorite,
                 );
               },
             ),
@@ -559,6 +618,7 @@ class _MarkerPopup extends StatelessWidget {
   final Animation<Offset> slideAnim;
   final VoidCallback onDismiss;
   final VoidCallback onNavigate;
+  final VoidCallback onGoNav;
 
   const _MarkerPopup({
     required this.restroom,
@@ -566,6 +626,7 @@ class _MarkerPopup extends StatelessWidget {
     required this.slideAnim,
     required this.onDismiss,
     required this.onNavigate,
+    required this.onGoNav,
   });
 
   @override
@@ -679,27 +740,75 @@ class _MarkerPopup extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
                     child: _AmenitiesRow(amenities: restroom.amenities),
                   ),
-                  GestureDetector(
-                    onTap: onNavigate,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFBADFDB), Color(0xFF7BBFBA)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
+                  // ── Two-button action row ───────────────────────
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(20)),
+                    child: Row(
+                      children: [
+                        // Navigate button — teal gradient
+                        Expanded(
+                          flex: 5,
+                          child: GestureDetector(
+                            onTap: onGoNav,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF7BBFBA), Color(0xFF4AADA7)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.navigation_rounded,
+                                      size: 15, color: Colors.white),
+                                  SizedBox(width: 6),
+                                  Text('Navigate',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
-                        borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(20)),
-                      ),
-                      child: const Center(
-                        child: Text('View Details  →',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white)),
-                      ),
+                        // Thin divider
+                        Container(width: 1, height: 44, color: Colors.white24),
+                        // View Details button — slightly lighter
+                        Expanded(
+                          flex: 5,
+                          child: GestureDetector(
+                            onTap: onNavigate,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFFBADFDB), Color(0xFF9DCFCA)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.info_outline_rounded,
+                                      size: 15, color: Colors.white),
+                                  SizedBox(width: 6),
+                                  Text('Details',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -763,6 +872,10 @@ class _BottomSheetContent extends StatelessWidget {
   final VoidCallback onLocateTap;
   final ValueChanged<String> onSearchChanged;
   final TextEditingController searchController;
+  final String activeTab;
+  final ValueChanged<String> onTabChanged;
+  final Set<String> favoriteIds;
+  final Future<void> Function(String) onToggleFavorite;
 
   const _BottomSheetContent({
     required this.scrollController,
@@ -773,6 +886,10 @@ class _BottomSheetContent extends StatelessWidget {
     required this.onLocateTap,
     required this.onSearchChanged,
     required this.searchController,
+    required this.activeTab,
+    required this.onTabChanged,
+    required this.favoriteIds,
+    required this.onToggleFavorite,
   });
 
   @override
@@ -838,30 +955,16 @@ class _BottomSheetContent extends StatelessWidget {
               ),
             ),
           ),
+          // ── Filter tabs: Nearby / Favorites ──────────────
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-              child: Row(children: [
-                Text('Nearby',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _C.textMid,
-                        letterSpacing: 0.4)),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _C.teal.withOpacity(0.45),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text('${restrooms.length}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _C.tealDark)),
-                ),
-              ]),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: _FilterTabBar(
+                activeTab: activeTab,
+                nearbyCount: activeTab == 'Nearby' ? restrooms.length : favoriteIds.length,
+                favCount: favoriteIds.length,
+                onTabChanged: onTabChanged,
+              ),
             ),
           ),
           SliverList(
@@ -882,6 +985,8 @@ class _BottomSheetContent extends StatelessWidget {
                   child: _RestroomCard(
                     restroom: restrooms[index],
                     onPinTap: () => onRestroomTap(restrooms[index]),
+                    isFavorite: favoriteIds.contains(restrooms[index].restroomId),
+                    onToggleFavorite: () async => onToggleFavorite(restrooms[index].restroomId),
                   ),
                 );
               },
@@ -944,7 +1049,14 @@ class _SearchBar extends StatelessWidget {
 class _RestroomCard extends StatefulWidget {
   final RestroomModel restroom;
   final VoidCallback onPinTap;
-  const _RestroomCard({required this.restroom, required this.onPinTap});
+  final bool isFavorite;
+  final Future<void> Function() onToggleFavorite;
+  const _RestroomCard({
+    required this.restroom,
+    required this.onPinTap,
+    required this.isFavorite,
+    required this.onToggleFavorite,
+  });
 
   @override
   State<_RestroomCard> createState() => _RestroomCardState();
@@ -1036,22 +1148,197 @@ class _RestroomCardState extends State<_RestroomCard>
               ]),
             ),
             const SizedBox(width: 8),
+            // Favorite heart button
             GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                widget.onPinTap();
-              },
-              child: Container(
-                width: 34, height: 34,
+              onTap: widget.onToggleFavorite,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                width: 38, height: 38,
                 decoration: BoxDecoration(
-                  color: _C.teal.withOpacity(0.2),
+                  color: widget.isFavorite
+                      ? const Color(0xFFD77A7A).withOpacity(0.15)
+                      : _C.searchFill,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.location_on_rounded,
-                    size: 18, color: _C.tealDark),
+                child: Icon(
+                  widget.isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  size: 18,
+                  color: widget.isFavorite
+                      ? const Color(0xFFD77A7A)
+                      : _C.textLight,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Navigate button on card
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                Navigator.push(
+                  context,
+                  _smoothRoute(NavigationPage(restroom: r)),
+                );
+              },
+              child: Container(
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7BBFBA), Color(0xFF4AADA7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF4AADA7).withOpacity(0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.navigation_rounded,
+                    size: 20, color: Colors.white),
               ),
             ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Filter Tab Bar (Nearby / Favorites)
+// ─────────────────────────────────────────────
+class _FilterTabBar extends StatelessWidget {
+  final String activeTab;
+  final int nearbyCount;
+  final int favCount;
+  final ValueChanged<String> onTabChanged;
+
+  const _FilterTabBar({
+    required this.activeTab,
+    required this.nearbyCount,
+    required this.favCount,
+    required this.onTabChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: _C.searchFill,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          _Tab(
+            label: 'Nearby',
+            icon: Icons.location_on_rounded,
+            count: nearbyCount,
+            isActive: activeTab == 'Nearby',
+            activeColor: _C.tealDark,
+            onTap: () => onTabChanged('Nearby'),
+          ),
+          _Tab(
+            label: 'Favorites',
+            icon: Icons.favorite_rounded,
+            count: favCount,
+            isActive: activeTab == 'Favorites',
+            activeColor: const Color(0xFFD77A7A),
+            onTap: () => onTabChanged('Favorites'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Tab extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final int count;
+  final bool isActive;
+  final Color activeColor;
+  final VoidCallback onTap;
+
+  const _Tab({
+    required this.label,
+    required this.icon,
+    required this.count,
+    required this.isActive,
+    required this.activeColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          margin: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : [],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isActive ? activeColor : _C.textLight,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  color: isActive ? activeColor : _C.textLight,
+                ),
+              ),
+              if (count > 0) ...[
+                const SizedBox(width: 5),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? activeColor.withOpacity(0.15)
+                        : _C.pill.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: isActive ? activeColor : _C.textLight,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
