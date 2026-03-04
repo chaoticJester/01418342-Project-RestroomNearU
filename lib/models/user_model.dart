@@ -9,7 +9,8 @@ class UserModel {
   final int totalAdded;
   final int totalHelpful;
   final List<String> reviewIds;
-  final String? photoUrl; // ✅ NEW: profile photo URL
+  final String? photoUrl;
+  final List<String> favoriteRestrooms;
 
   UserModel({
     required this.userId,
@@ -21,6 +22,7 @@ class UserModel {
     this.totalHelpful = 0,
     this.reviewIds = const [],
     this.photoUrl,
+    this.favoriteRestrooms = const []
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
@@ -37,6 +39,7 @@ class UserModel {
       totalHelpful: map['totalHelpful']?.toInt() ?? 0,
       reviewIds: List<String>.from(map['reviewIds'] ?? []),
       photoUrl: map['photoUrl'] as String?,
+      favoriteRestrooms: List<String>.from(map['favoriteRestrooms'] ?? []),
     );
   }
 
@@ -51,6 +54,7 @@ class UserModel {
       'totalHelpful': totalHelpful,
       'reviewIds': reviewIds,
       if (photoUrl != null) 'photoUrl': photoUrl,
+      'favoriteRestrooms': favoriteRestrooms
     };
   }
 }

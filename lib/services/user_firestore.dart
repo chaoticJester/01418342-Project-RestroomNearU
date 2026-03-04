@@ -26,6 +26,7 @@ class UserService {
         totalReviews: 0,
         reviewIds: [],
         photoUrl: firebaseUser.photoURL,
+        favoriteRestrooms: [],
       );
       await docRef.set(newUser.toMap());
       print("New user created in Firestore");
@@ -200,4 +201,23 @@ class UserService {
       'reviewIds': FieldValue.arrayRemove([reviewId]),
     });
   }
+
+  Future<void> addFavoriteRestroom(String restroomId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    await _userCollection.doc(user.uid).update({
+      'favoriteRestrooms': FieldValue.arrayUnion([restroomId]),
+    });
+  }
+
+  Future<void> removeFavoriteRestroom(String restroomId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    await _userCollection.doc(user.uid).update({
+      'favoriteRestrooms': FieldValue.arrayRemove([restroomId]),
+    });
+  }
+
 }
