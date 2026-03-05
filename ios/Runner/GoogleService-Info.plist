@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>24992553222-54oe8i1476a6l3rnf16i2evt826ec04p.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.24992553222-54oe8i1476a6l3rnf16i2evt826ec04p</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>24992553222-8h5upt5anh9ka030sa17lhmivnmlb0mb.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyD8hfw6u1xc5Ngmd8WxSqi7WSwWMfGNRfs</string>
+	<key>GCM_SENDER_ID</key>
+	<string>24992553222</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.restroomNearu</string>
+	<key>PROJECT_ID</key>
+	<string>restroom-near-u</string>
+	<key>STORAGE_BUCKET</key>
+	<string>restroom-near-u.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:24992553222:ios:8b82755fb0c43a18c4e687</string>
+</dict>
+</plist>

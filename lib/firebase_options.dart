@@ -26,10 +26,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
@@ -59,4 +56,16 @@ class DefaultFirebaseOptions {
     projectId: 'restroom-near-u',
     storageBucket: 'restroom-near-u.firebasestorage.app',
   );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyD8hfw6u1xc5Ngmd8WxSqi7WSwWMfGNRfs',
+    appId: '1:24992553222:ios:8b82755fb0c43a18c4e687',
+    messagingSenderId: '24992553222',
+    projectId: 'restroom-near-u',
+    storageBucket: 'restroom-near-u.firebasestorage.app',
+    androidClientId: '24992553222-8h5upt5anh9ka030sa17lhmivnmlb0mb.apps.googleusercontent.com',
+    iosClientId: '24992553222-54oe8i1476a6l3rnf16i2evt826ec04p.apps.googleusercontent.com',
+    iosBundleId: 'com.example.restroomNearu',
+  );
+
 }
