@@ -3,17 +3,9 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -49,23 +41,22 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDO7DKAmlwaS4bx1dUWI5C2jeThD4XR33s',
-    appId: '1:24992553222:android:c139822ac9f7976cc4e687',
-    messagingSenderId: '24992553222',
-    projectId: 'restroom-near-u',
-    storageBucket: 'restroom-near-u.firebasestorage.app',
+  static FirebaseOptions get android => FirebaseOptions(
+    apiKey: dotenv.env['FIREBASE_ANDROID_API_KEY']!,
+    appId: dotenv.env['FIREBASE_ANDROID_APP_ID']!,
+    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+    projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
   );
 
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyD8hfw6u1xc5Ngmd8WxSqi7WSwWMfGNRfs',
-    appId: '1:24992553222:ios:8b82755fb0c43a18c4e687',
-    messagingSenderId: '24992553222',
-    projectId: 'restroom-near-u',
-    storageBucket: 'restroom-near-u.firebasestorage.app',
-    androidClientId: '24992553222-8h5upt5anh9ka030sa17lhmivnmlb0mb.apps.googleusercontent.com',
-    iosClientId: '24992553222-54oe8i1476a6l3rnf16i2evt826ec04p.apps.googleusercontent.com',
-    iosBundleId: 'com.example.restroomNearu',
+  static FirebaseOptions get ios => FirebaseOptions(
+    apiKey: dotenv.env['FIREBASE_IOS_API_KEY']!,
+    appId: dotenv.env['FIREBASE_IOS_APP_ID']!,
+    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+    projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+    androidClientId: dotenv.env['FIREBASE_IOS_ANDROID_CLIENT_ID']!,
+    iosClientId: dotenv.env['FIREBASE_IOS_CLIENT_ID']!,
+    iosBundleId: dotenv.env['FIREBASE_IOS_BUNDLE_ID']!,
   );
-
 }
