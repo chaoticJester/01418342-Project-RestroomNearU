@@ -71,15 +71,17 @@ class ReviewService {
   Stream<List<ReviewModel>> getReviewsByUser(String userId) {
     return _reviewCollection
         .where('reviewerId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final list = snapshot.docs.map((doc) {
         return ReviewModel.fromMap(
           doc.data() as Map<String, dynamic>,
           doc.id,
         );
       }).toList();
+      // Sort in Dart to avoid needing a Firestore composite index
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return list;
     });
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_model.dart';
 import '../../utils/helpers.dart';
 import '../../models/review_model.dart';
@@ -159,10 +160,51 @@ class _ProfilePageState extends State<ProfilePage>
                                 ? _emptyState('No reviews yet',
                                     Icons.edit_note_rounded)
                                 : Column(
-                                    children: reviews
-                                        .take(3)
-                                        .map((r) => _ReviewTile(review: r))
-                                        .toList(),
+                                    children: [
+                                      ...reviews
+                                          .take(3)
+                                          .map((r) => _ReviewTile(review: r))
+                                          .toList(),
+                                      if (reviews.length > 3)
+                                        TextButton(
+                                          onPressed: () {
+                                            showModalBottomSheet(
+                                              context: context,
+                                              isScrollControlled: true,
+                                              backgroundColor: _C.bg,
+                                              shape: const RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                              ),
+                                              builder: (_) => DraggableScrollableSheet(
+                                                expand: false,
+                                                initialChildSize: 0.7,
+                                                maxChildSize: 0.95,
+                                                builder: (_, scrollCtrl) => Column(
+                                                  children: [
+                                                    const SizedBox(height: 12),
+                                                    Container(width: 40, height: 4, decoration: BoxDecoration(color: _C.divider, borderRadius: BorderRadius.circular(2))),
+                                                    const SizedBox(height: 12),
+                                                    const Text('All Reviews', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.textDark)),
+                                                    const SizedBox(height: 8),
+                                                    Expanded(
+                                                      child: ListView.builder(
+                                                        controller: scrollCtrl,
+                                                        padding: const EdgeInsets.all(16),
+                                                        itemCount: reviews.length,
+                                                        itemBuilder: (_, i) => _ReviewTile(review: reviews[i]),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          child: Text(
+                                            'See all ${reviews.length} reviews →',
+                                            style: const TextStyle(fontSize: 13, color: _C.tealDark, fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                           ),
                         ),
@@ -528,6 +570,18 @@ class _ReviewTile extends StatelessWidget {
     return '${d.inMinutes}m ago';
   }
 
+  Future<String> _getRestroomName(String restroomId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restrooms')
+          .doc(restroomId)
+          .get();
+      return doc.data()?['restroomName'] ?? restroomId;
+    } catch (_) {
+      return restroomId;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -560,15 +614,18 @@ class _ReviewTile extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          review.restroomId,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _C.textDark,
+                        child: FutureBuilder<String>(
+                          future: _getRestroomName(review.restroomId),
+                          builder: (_, snap) => Text(
+                            snap.data ?? '...',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: _C.textDark,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       // Star + rating chip
