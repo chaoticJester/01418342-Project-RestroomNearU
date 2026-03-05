@@ -85,7 +85,7 @@ key.properties
 # =========================
 ios/Pods/
 ios/.symlinks/
-ios/Flutter/*.xcconfig
+ios/Flutter/Flutter.xcconfig
 ios/Flutter/flutter_export_environment.sh
 
 # =========================
@@ -107,3 +107,8 @@ DerivedData/
 # =========================
 web/.dart_tool/
 web/build/
+
+# =========================
+# Secrets (NEVER COMMIT)
+# =========================
+.env
