@@ -2,19 +2,17 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/services/user_firestore.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EmailJS config — fill these in after setting up your EmailJS account
-// See: https://www.emailjs.com/docs/tutorial/overview/
-// ─────────────────────────────────────────────────────────────────────────────
-const _kEmailJsServiceId          = 'service_649fgic';
-const _kEmailJsTemplateIdApproved = 'template_8j1e3cb';
-const _kEmailJsTemplateIdRejected = 'template_9l01srl';
-const _kEmailJsPublicKey          = 'uUFWNA5xDdm-szEYB';
+// EmailJS config loaded from .env
+String get _kEmailJsServiceId          => dotenv.env['EMAILJS_SERVICE_ID'] ?? '';
+String get _kEmailJsTemplateIdApproved => dotenv.env['EMAILJS_TEMPLATE_APPROVED'] ?? '';
+String get _kEmailJsTemplateIdRejected => dotenv.env['EMAILJS_TEMPLATE_REJECTED'] ?? '';
+String get _kEmailJsPublicKey          => dotenv.env['EMAILJS_PUBLIC_KEY'] ?? '';
 
 class AdminRequestPopup extends StatelessWidget {
   final Map<String, dynamic> requestData;

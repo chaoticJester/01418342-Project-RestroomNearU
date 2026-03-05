@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
@@ -507,13 +510,50 @@ class _RequestPopup extends StatelessWidget {
   const _RequestPopup(
       {required this.request, required this.requestService, this.userName});
 
+  // ── EmailJS helper ──────────────────────────────────────────────────────
+  // Returns null on success, or an error message string on failure
+  Future<String?> _sendEmail({
+    required String templateId,
+    required Map<String, String> templateParams,
+  }) async {
+    try {
+      final serviceId = dotenv.env['EMAILJS_SERVICE_ID'] ?? '';
+      final publicKey = dotenv.env['EMAILJS_PUBLIC_KEY'] ?? '';
+
+      debugPrint('EmailJS → service: $serviceId, template: $templateId, key: $publicKey');
+      debugPrint('EmailJS → params: $templateParams');
+
+      final response = await http.post(
+        Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+        headers: {
+          'Content-Type': 'application/json',
+          'origin': 'http://localhost',
+        },
+        body: jsonEncode({
+          'service_id':      serviceId,
+          'template_id':     templateId,
+          'user_id':         publicKey,
+          'template_params': templateParams,
+        }),
+      );
+
+      debugPrint('EmailJS response: ${response.statusCode} — ${response.body}');
+
+      if (response.statusCode == 200) {
+        return null; // success
+      } else {
+        return 'EmailJS error ${response.statusCode}: ${response.body}';
+      }
+    } catch (e) {
+      return 'EmailJS exception: $e';
+    }
+  }
+
   Future<void> _approve(BuildContext context) async {
     try {
-      // Generate a brand-new Firestore ID for the restroom
       final newRestroomId =
           FirebaseFirestore.instance.collection('restrooms').doc().id;
 
-      // Copy the restroom from the request but with the new ID
       final restroom = request.restroom.copyWith();
       final restroomWithId = RestroomModel(
         restroomId: newRestroomId,
@@ -533,34 +573,137 @@ class _RequestPopup extends StatelessWidget {
       );
 
       await RestroomService().createRestroom(restroomWithId);
-      await requestService.updateSpecificField(
-          request.requestId, {
+      await requestService.updateSpecificField(request.requestId, {
         'status': Status.approved.name,
-        'restroomId': newRestroomId, // link back to the created restroom
+        'restroomId': newRestroomId,
       });
+
+      // ✅ Increment totalAdded for submitting user
+      if (request.restroom.createdBy.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(request.restroom.createdBy)
+            .update({'totalAdded': FieldValue.increment(1)});
+      }
+
+      // ✅ Send approval email
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(request.userId)
+          .get();
+      final email = userDoc.data()?['email'] as String? ?? '';
+      final name  = userDoc.data()?['displayName'] as String? ?? 'User';
+      if (email.isNotEmpty) {
+        final emailError = await _sendEmail(
+          templateId: dotenv.env['EMAILJS_TEMPLATE_APPROVED'] ?? '',
+          templateParams: {
+            'to_email':      email,
+            'to_name':       name,
+            'restroom_name': restroom.restroomName,
+          },
+        );
+        if (emailError != null && context.mounted) {
+          _snack(context, 'Approved but email failed: $emailError', _C.orange);
+          return;
+        }
+      }
+
       if (context.mounted) {
         Navigator.pop(context);
-        _snack(context, 'Request approved — toilet added!', _C.green);
+        _snack(context, 'Request approved — user notified by email.', _C.green);
       }
     } catch (e) {
-      if (context.mounted) {
-        _snack(context, 'Error: $e', _C.redLight);
-      }
+      if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
     }
   }
 
   Future<void> _reject(BuildContext context) async {
+    // Ask for optional reason first
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _C.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Reject Request',
+            style: TextStyle(fontWeight: FontWeight.w800, color: _C.textDark)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The user will be notified by email. You can optionally add a reason.',
+              style: TextStyle(fontSize: 13, color: _C.textMid),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Reason (optional)',
+                filled: true,
+                fillColor: _C.fieldFill,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: _C.textMid, fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reject',
+                style: TextStyle(color: _C.redLight, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     try {
-      await requestService.updateSpecificField(
-          request.requestId, {'status': Status.rejected.name});
+      final reason = reasonController.text.trim();
+      final updateData = <String, dynamic>{'status': Status.rejected.name};
+      if (reason.isNotEmpty) updateData['rejectionReason'] = reason;
+
+      await requestService.updateSpecificField(request.requestId, updateData);
+
+      // ✅ Send rejection email
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(request.userId)
+          .get();
+      final email = userDoc.data()?['email'] as String? ?? '';
+      final name  = userDoc.data()?['displayName'] as String? ?? 'User';
+      if (email.isNotEmpty) {
+        final emailError = await _sendEmail(
+          templateId: dotenv.env['EMAILJS_TEMPLATE_REJECTED'] ?? '',
+          templateParams: {
+            'to_email':      email,
+            'to_name':       name,
+            'restroom_name': request.restroom.restroomName,
+            'reason':        reason.isNotEmpty ? reason : 'No reason provided.',
+          },
+        );
+        if (emailError != null && context.mounted) {
+          _snack(context, 'Rejected but email failed: $emailError', _C.orange);
+          return;
+        }
+      }
+
       if (context.mounted) {
         Navigator.pop(context);
-        _snack(context, 'Request rejected.', _C.redLight);
+        _snack(context, 'Request rejected — user notified by email.', _C.redLight);
       }
     } catch (e) {
-      if (context.mounted) {
-        _snack(context, 'Error: $e', _C.redLight);
-      }
+      if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
     }
   }
 

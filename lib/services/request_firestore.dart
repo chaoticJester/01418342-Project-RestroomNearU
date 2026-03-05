@@ -28,12 +28,22 @@ class RequestService {
   // READ
   Stream<List<RequestModel>> getRequestsStream() {
     return _requestCollection.snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final list = snapshot.docs.map((doc) {
         return RequestModel.fromMap(
           doc.data() as Map<String, dynamic>,
           doc.id,
         );
       }).toList();
+
+      // Sort: pending first, then approved/rejected, newest first within each group
+      const order = {Status.pending: 0, Status.approved: 1, Status.rejected: 2};
+      list.sort((a, b) {
+        final statusCmp = (order[a.status] ?? 3).compareTo(order[b.status] ?? 3);
+        if (statusCmp != 0) return statusCmp;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+      return list;
     });
   }
 
