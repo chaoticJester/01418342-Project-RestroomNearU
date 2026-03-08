@@ -8,6 +8,7 @@ import '../../models/review_model.dart';
 import '../../services/user_firestore.dart';
 import '../../services/review_firestore.dart';
 import '../../widgets/profile_avatar_widget.dart';
+import 'profile_settings_page.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -27,9 +28,6 @@ class _C {
   static const fieldFill  = Color(0xFFF2EFE0);
 }
 
-// ─────────────────────────────────────────────
-// ProfilePage
-// ─────────────────────────────────────────────
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -67,7 +65,6 @@ class _ProfilePageState extends State<ProfilePage>
 
   Future<void> _handleLogOut(BuildContext context) async {
     HapticFeedback.mediumImpact();
-    // Confirm dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -135,11 +132,18 @@ class _ProfilePageState extends State<ProfilePage>
                         // ── Hero header ──────────────────────
                         SliverToBoxAdapter(
                           child: _HeroHeader(
-                            displayName: user.displayName,
-                            email: user.email,
-                            photoUrl: user.photoUrl,
+                            user: user,
                             onBack: () => Navigator.of(context).pop(),
+                            onSettings: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => ProfileSettingsPage(user: user)),
+                            ),
                           ),
+                        ),
+
+                        // ── Level & Points Section ───────────
+                        SliverToBoxAdapter(
+                          child: _LevelCard(user: user),
                         ),
 
                         // ── Stats row ────────────────────────
@@ -168,36 +172,7 @@ class _ProfilePageState extends State<ProfilePage>
                                       if (reviews.length > 3)
                                         TextButton(
                                           onPressed: () {
-                                            showModalBottomSheet(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              backgroundColor: _C.bg,
-                                              shape: const RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                                              ),
-                                              builder: (_) => DraggableScrollableSheet(
-                                                expand: false,
-                                                initialChildSize: 0.7,
-                                                maxChildSize: 0.95,
-                                                builder: (_, scrollCtrl) => Column(
-                                                  children: [
-                                                    const SizedBox(height: 12),
-                                                    Container(width: 40, height: 4, decoration: BoxDecoration(color: _C.divider, borderRadius: BorderRadius.circular(2))),
-                                                    const SizedBox(height: 12),
-                                                    const Text('All Reviews', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.textDark)),
-                                                    const SizedBox(height: 8),
-                                                    Expanded(
-                                                      child: ListView.builder(
-                                                        controller: scrollCtrl,
-                                                        padding: const EdgeInsets.all(16),
-                                                        itemCount: reviews.length,
-                                                        itemBuilder: (_, i) => _ReviewTile(review: reviews[i]),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
+                                            _showAllReviews(context, reviews);
                                           },
                                           child: Text(
                                             'See all ${reviews.length} reviews →',
@@ -242,6 +217,39 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
+  void _showAllReviews(BuildContext context, List<ReviewModel> reviews) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _C.bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: _C.divider, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            const Text('All Reviews', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.textDark)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.all(16),
+                itemCount: reviews.length,
+                itemBuilder: (_, i) => _ReviewTile(review: reviews[i]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _emptyState(String text, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
@@ -258,111 +266,182 @@ class _ProfilePageState extends State<ProfilePage>
 }
 
 // ─────────────────────────────────────────────
+// Level Card
+// ─────────────────────────────────────────────
+class _LevelCard extends StatelessWidget {
+  final UserModel user;
+  const _LevelCard({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    final nextLevelPoints = user.level == 1 ? 100 : (user.level == 2 ? 300 : (user.level == 3 ? 600 : 1000));
+    final progress = (user.points / nextLevelPoints).clamp(0.0, 1.0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _C.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _C.divider, width: 1),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _C.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.workspace_premium_rounded, color: _C.orange, size: 18),
+                      const SizedBox(width: 6),
+                      Text(user.badgeName, style: const TextStyle(color: _C.orange, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Text('Level ${user.level}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: _C.textDark)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text('${user.points} pts', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _C.textMid)),
+                const Spacer(),
+                Text('Next: $nextLevelPoints pts', style: const TextStyle(fontSize: 11, color: _C.textLight)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                backgroundColor: _C.divider,
+                valueColor: const AlwaysStoppedAnimation<Color>(_C.tealDark),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // Hero Header
 // ─────────────────────────────────────────────
 class _HeroHeader extends StatelessWidget {
-  final String displayName;
-  final String email;
-  final String? photoUrl;
+  final UserModel user;
   final VoidCallback onBack;
+  final VoidCallback onSettings;
 
   const _HeroHeader({
-    required this.displayName,
-    required this.email,
+    required this.user,
     required this.onBack,
-    this.photoUrl,
+    required this.onSettings,
   });
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Gradient background
         Container(
           height: 240,
           width: double.infinity,
           decoration: const BoxDecoration(
             color: Color(0xFF7BBFBA),
           ),
-          child: Stack(
-            children: [
-              // Avatar + name
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 28),
-                    // ✅ Profile avatar with upload support
-                    ProfileAvatarWidget(
-                      photoUrl: photoUrl,
-                      size: 84,
-                      showEditButton: true,
-                      isAdmin: false,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      displayName,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      email,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.85),
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 28),
+                ProfileAvatarWidget(
+                  photoUrl: user.photoUrl,
+                  size: 84,
+                  showEditButton: true,
+                  isAdmin: false,
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  user.displayName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  user.email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.85),
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
 
-        // Back button — same style as RestroomDetailPage
         Positioned(
           top: 40,
           left: 6,
           child: SafeArea(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  onBack();
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.arrow_back,
-                      size: 22, color: _C.textDark),
-                ),
-              ),
-            ),
+            child: _HeaderIconButton(icon: Icons.arrow_back, onTap: onBack),
+          ),
+        ),
+
+        Positioned(
+          top: 40,
+          right: 6,
+          child: SafeArea(
+            child: _HeaderIconButton(icon: Icons.settings_rounded, onTap: onSettings),
           ),
         ),
       ],
     );
   }
+}
 
+class _HeaderIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _HeaderIconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Icon(icon, size: 22, color: _C.textDark),
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -482,9 +561,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Reusable Section Card
-// ─────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -517,7 +593,6 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section header
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
               child: Row(
@@ -544,7 +619,6 @@ class _SectionCard extends StatelessWidget {
               ),
             ),
             Divider(color: _C.divider, height: 1, thickness: 1),
-            // Content
             Padding(
               padding: const EdgeInsets.all(14),
               child: child,
@@ -556,9 +630,6 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Review Tile
-// ─────────────────────────────────────────────
 class _ReviewTile extends StatelessWidget {
   final ReviewModel review;
   const _ReviewTile({required this.review});
@@ -596,7 +667,6 @@ class _ReviewTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail
             Container(
               width: 46,
               height: 46,
@@ -628,7 +698,6 @@ class _ReviewTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Star + rating chip
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 3),
@@ -676,7 +745,7 @@ class _ReviewTile extends StatelessWidget {
                       Icon(Icons.thumb_up_alt_outlined,
                           size: 11, color: _C.textLight),
                       const SizedBox(width: 3),
-                      Text('${review.totalLikes}',
+                      Text('${review.helpfulCount}',
                           style: const TextStyle(
                               fontSize: 10, color: _C.textLight)),
                     ],
@@ -691,9 +760,6 @@ class _ReviewTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Account Info
-// ─────────────────────────────────────────────
 class _AccountInfo extends StatelessWidget {
   final String email;
   final DateTime? createdAt;
@@ -771,9 +837,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Log Out Button
-// ─────────────────────────────────────────────
 class _LogOutButton extends StatefulWidget {
   final VoidCallback onTap;
   const _LogOutButton({required this.onTap});
