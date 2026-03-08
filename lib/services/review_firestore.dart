@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '/models/review_model.dart'; 
 import 'package:restroom_near_u/services/user_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class ReviewService {
   final CollectionReference _reviewCollection =
@@ -12,55 +13,64 @@ class ReviewService {
     final restroomRef = firestore.collection('restrooms').doc(review.restroomId);
     final reviewRef = _reviewCollection.doc(review.reviewId); 
 
-    return firestore.runTransaction((transaction) async {
-      // 1. อ่านข้อมูลห้องน้ำปัจจุบันมาก่อน
-      DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
-      if (!restroomSnapshot.exists) {
-        throw Exception("Restroom does not exist!");
-      }
+    try {
+      await firestore.runTransaction((transaction) async {
+        // 1. อ่านข้อมูลห้องน้ำปัจจุบันมาก่อน
+        DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
+        if (!restroomSnapshot.exists) {
+          throw Exception("Restroom does not exist!");
+        }
 
-      // 2. คำนวณค่าเฉลี่ยใหม่สำหรับทุกหมวดหมู่
-      int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
-      int newTotal = currentTotal + 1;
+        final data = restroomSnapshot.data() as Map<String, dynamic>;
 
-      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
-      double newAvg = ((currentAvg * currentTotal) + review.rating) / newTotal;
+        // 2. คำนวณค่าเฉลี่ยใหม่สำหรับทุกหมวดหมู่ (ใช้การเช็ค null ที่ปลอดภัยกว่า)
+        int currentTotal = (data['totalRatings'] ?? 0).toInt();
+        int newTotal = currentTotal + 1;
 
-      double currentClean = (restroomSnapshot.get('avgCleanliness') ?? 0.0).toDouble();
-      double newClean = ((currentClean * currentTotal) + review.cleanlinessRating) / newTotal;
+        double currentAvg = (data['avgRating'] ?? 0.0).toDouble();
+        double newAvg = ((currentAvg * currentTotal) + review.rating) / newTotal;
 
-      double currentAvail = (restroomSnapshot.get('avgAvailability') ?? 0.0).toDouble();
-      double newAvail = ((currentAvail * currentTotal) + review.availabilityRating) / newTotal;
+        double currentClean = (data['avgCleanliness'] ?? 0.0).toDouble();
+        double newClean = ((currentClean * currentTotal) + review.cleanlinessRating) / newTotal;
 
-      double currentAmen = (restroomSnapshot.get('avgAmenities') ?? 0.0).toDouble();
-      double newAmen = ((currentAmen * currentTotal) + review.amenitiesRating) / newTotal;
+        double currentAvail = (data['avgAvailability'] ?? 0.0).toDouble();
+        double newAvail = ((currentAvail * currentTotal) + review.availabilityRating) / newTotal;
 
-      double currentScent = (restroomSnapshot.get('avgScent') ?? 0.0).toDouble();
-      double newScent = ((currentScent * currentTotal) + review.smellRating) / newTotal;
+        double currentAmen = (data['avgAmenities'] ?? 0.0).toDouble();
+        double newAmen = ((currentAmen * currentTotal) + review.amenitiesRating) / newTotal;
 
-      // 3. เตรียมข้อมูลรีวิว
-      Map<String, dynamic> reviewData = review.toMap();
-      reviewData['reviewId'] = reviewRef.id;
+        double currentScent = (data['avgScent'] ?? 0.0).toDouble();
+        double newScent = ((currentScent * currentTotal) + review.smellRating) / newTotal;
+
+        // 3. เตรียมข้อมูลรีวิว
+        Map<String, dynamic> reviewData = review.toMap();
+        reviewData['reviewId'] = reviewRef.id;
+        
+        // Override ALL time fields
+        reviewData['timestamp'] = FieldValue.serverTimestamp();
+        reviewData['createdAt'] = FieldValue.serverTimestamp();
+        reviewData['updatedAt'] = FieldValue.serverTimestamp();
+
+        // 4. เขียนลง database
+        transaction.set(reviewRef, reviewData);
+        transaction.update(restroomRef, {
+          'avgRating': newAvg,
+          'avgCleanliness': newClean,
+          'avgAvailability': newAvail,
+          'avgAmenities': newAmen,
+          'avgScent': newScent,
+          'totalRatings': newTotal,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }, timeout: const Duration(seconds: 15)); // เพิ่ม Timeout ป้องกันค้าง
+
+      // ✅ Increment review count AFTER transaction completes
+      await UserService().incrementReviewCount(reviewRef.id);
       
-      // Override ALL time fields to guarantee they match perfectly on the server
-      reviewData['timestamp'] = FieldValue.serverTimestamp();
-      reviewData['createdAt'] = FieldValue.serverTimestamp();
-      reviewData['updatedAt'] = FieldValue.serverTimestamp();
-
-      // 4. เขียนลง database (ทำพร้อมกันทั้ง 2 ที่)
-      transaction.set(reviewRef, reviewData); // สร้างรีวิว
-      transaction.update(restroomRef, {       // อัปเดตคะแนนห้องน้ำ
-        'avgRating': newAvg,
-        'avgCleanliness': newClean,
-        'avgAvailability': newAvail,
-        'avgAmenities': newAmen,
-        'avgScent': newScent,
-        'totalRatings': newTotal,
-      });
-    });
-
-    // ✅ Increment review count AFTER transaction completes
-    await UserService().incrementReviewCount(reviewRef.id);
+    } catch (e) {
+      debugPrint("Error in addReviewWithRatingUpdate: $e");
+      rethrow; // ส่ง Error กลับไปที่ UI
+    }
   }
 
   // READ: อ่านข้อมูลรีวิว
