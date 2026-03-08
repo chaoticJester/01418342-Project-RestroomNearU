@@ -19,13 +19,24 @@ class ReviewService {
         throw Exception("Restroom does not exist!");
       }
 
-      // 2. คำนวณค่าเฉลี่ยใหม่
-      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
+      // 2. คำนวณค่าเฉลี่ยใหม่สำหรับทุกหมวดหมู่
       int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
-
       int newTotal = currentTotal + 1;
-      // สูตรคำนวณค่าเฉลี่ยแบบสะสม: ((ค่าเก่า * จำนวนเก่า) + คะแนนใหม่) / จำนวนใหม่
+
+      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
       double newAvg = ((currentAvg * currentTotal) + review.rating) / newTotal;
+
+      double currentClean = (restroomSnapshot.get('avgCleanliness') ?? 0.0).toDouble();
+      double newClean = ((currentClean * currentTotal) + review.cleanlinessRating) / newTotal;
+
+      double currentAvail = (restroomSnapshot.get('avgAvailability') ?? 0.0).toDouble();
+      double newAvail = ((currentAvail * currentTotal) + review.availabilityRating) / newTotal;
+
+      double currentAmen = (restroomSnapshot.get('avgAmenities') ?? 0.0).toDouble();
+      double newAmen = ((currentAmen * currentTotal) + review.amenitiesRating) / newTotal;
+
+      double currentScent = (restroomSnapshot.get('avgScent') ?? 0.0).toDouble();
+      double newScent = ((currentScent * currentTotal) + review.smellRating) / newTotal;
 
       // 3. เตรียมข้อมูลรีวิว
       Map<String, dynamic> reviewData = review.toMap();
@@ -40,22 +51,24 @@ class ReviewService {
       transaction.set(reviewRef, reviewData); // สร้างรีวิว
       transaction.update(restroomRef, {       // อัปเดตคะแนนห้องน้ำ
         'avgRating': newAvg,
+        'avgCleanliness': newClean,
+        'avgAvailability': newAvail,
+        'avgAmenities': newAmen,
+        'avgScent': newScent,
         'totalRatings': newTotal,
       });
     });
 
     // ✅ Increment review count AFTER transaction completes
-    // (cannot await inside a Firestore transaction)
     await UserService().incrementReviewCount(reviewRef.id);
   }
 
   // READ: อ่านข้อมูลรีวิว
 
-  // 1. ดึงรีวิวทั้งหมดของ "ห้องน้ำหนึ่งๆ" (เรียงตามเวลาล่าสุด)
   Stream<List<ReviewModel>> getReviewsByRestroom(String restroomId) {
     return _reviewCollection
-        .where('restroomId', isEqualTo: restroomId) // Filter เฉพาะห้องน้ำนี้
-        .orderBy('timestamp', descending: true)     // ใหม่สุดขึ้นก่อน
+        .where('restroomId', isEqualTo: restroomId) 
+        .orderBy('timestamp', descending: true)     
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
@@ -67,7 +80,6 @@ class ReviewService {
     });
   }
 
-  // 2. ดึงประวัติรีวิวของ "ผู้ใช้คนหนึ่ง" (เช่น หน้า My Reviews)
   Stream<List<ReviewModel>> getReviewsByUser(String userId) {
     return _reviewCollection
         .where('reviewerId', isEqualTo: userId)
@@ -79,7 +91,6 @@ class ReviewService {
           doc.id,
         );
       }).toList();
-      // Sort in Dart to avoid needing a Firestore composite index
       list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return list;
     });
@@ -96,7 +107,6 @@ class ReviewService {
           doc.id,
         );
       }).toList();
-      // Sort in Dart — avoids needing a Firestore composite index
       list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return list;
     });
@@ -109,19 +119,16 @@ class ReviewService {
     final reviewRef = _reviewCollection.doc(reviewId);
 
     return firestore.runTransaction((transaction) async {
-      // 1. Read current restroom data first
       DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
       if (!restroomSnapshot.exists) {
         throw Exception("Restroom does not exist!");
       }
 
-      // 2. Calculate new average by swapping old rating out, new rating in
       double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
       int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
 
       double newAvg = currentTotal <= 0 ? newRating : ((currentAvg * currentTotal) - oldRating + newRating) / currentTotal;
 
-      // 3. Update review content and restroom rating simultaneously
       transaction.update(reviewRef, {
         'comment': newComment,
         'rating': newRating,
@@ -134,7 +141,6 @@ class ReviewService {
     });
   }
   
-  // ฟังก์ชันกด Like รีวิว
   Future<void> toggleLikeReview(String reviewId, String userId) async {
     final reviewRef = _reviewCollection.doc(reviewId);
     final snapshot = await reviewRef.get();
@@ -153,7 +159,6 @@ class ReviewService {
           : FieldValue.arrayUnion([userId]),
     });
 
-    // ✅ Update totalHelpful on the reviewer's user doc
     if (reviewerId.isNotEmpty) {
       await FirebaseFirestore.instance
           .collection('users')
@@ -169,22 +174,17 @@ class ReviewService {
     final reviewRef = _reviewCollection.doc(reviewId);
 
     await firestore.runTransaction((transaction) async {
-      // 1. Read the current restroom data first
       DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
       if (!restroomSnapshot.exists) {
         throw Exception("Restroom does not exist!");
       }
 
-      // 2. Calculate new average
       double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
       int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
 
       int newTotal = currentTotal - 1;
-
-      // 3. Edge case: last review deleted → reset to 0
       double newAvg = newTotal <= 0 ? 0.0 : ((currentAvg * currentTotal) - rating) / newTotal;
 
-      // 4. Delete review and update restroom rating simultaneously
       transaction.delete(reviewRef);
       transaction.update(restroomRef, {
         'avgRating': newAvg,
@@ -194,7 +194,6 @@ class ReviewService {
     await UserService().incrementReviewCount(reviewRef.id);
   }
 
-  // ฟังก์ชันคืนค่าคำบรรยายตามช่วงคะแนน 
   String getRatingBadge(double rating) {
     if (rating >= 4.5) return 'Awesome!';
     if (rating >= 3.5) return 'Good';
