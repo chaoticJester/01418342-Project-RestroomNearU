@@ -62,7 +62,7 @@ class _NavigationPageState extends State<NavigationPage> {
     if (_currentPosition == null) return;
 
     // Fetch API key from .env file
-    final String apiKey = dotenv.get('GOOGLE_MAPS_API_KEY', fallback: '');
+    final String apiKey = dotenv.get('GOOGLE_MAPS_API_KEY_ANDROID', fallback: '');
 
     if (apiKey.isEmpty) {
       if (mounted) {
