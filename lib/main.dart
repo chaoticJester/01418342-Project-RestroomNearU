@@ -13,9 +13,11 @@ import 'package:restroom_near_u/pages/admin/admin_request_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_report_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_total_toilets_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_profile_page.dart';
+import 'package:restroom_near_u/pages/admin/admin_users_page.dart';
 import 'package:provider/provider.dart';
 import 'package:restroom_near_u/providers/app_auth_provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:intl/intl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); 
@@ -51,6 +53,7 @@ class MyApp extends StatelessWidget {
         '/admin_reports': (context) => const AdminReportPage(),
         '/admin_toilets': (context) => const AdminTotalToiletsPage(),
         '/admin_profile': (context) => const AdminProfilePage(),
+        '/admin_users': (context) => const AdminUsersPage(),
       }, 
       theme: ThemeData(
         textTheme: const TextTheme(
@@ -72,33 +75,46 @@ class MyApp extends StatelessWidget {
         ),
       ),
       home: StreamBuilder<User?>(
-        // Login หรือยัง?
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, authSnapshot) {
-          // เช็คสถานะ Auth
           if(authSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // มีไอดี Login อยู่
           if(authSnapshot.hasData) {
             final User firebaseUser = authSnapshot.data!;
 
-            // ใช้ StreamBuilder แทน FutureBuilder
-            // เพื่อให้ react ทันทีที่ Firestore document ถูกสร้าง
             return StreamBuilder<UserModel?>(
               stream: UserService().getUserStream(firebaseUser.uid),
               builder: (context, userSnapshot) {
-                // ยังโหลดอยู่
                 if(userSnapshot.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
 
-                // ได้ข้อมูลมาแล้ว → ส่งไปตาม role
                 if(userSnapshot.hasData && userSnapshot.data != null) {
                   final UserModel userModel = userSnapshot.data!;
+
+                  // ── Check if Banned ──
+                  if (userModel.isBanned) {
+                    return _RestrictedAccessScreen(
+                      title: 'Account Banned',
+                      message: 'Your account has been permanently banned for violating our terms of service.',
+                      icon: Icons.gavel_rounded,
+                    );
+                  }
+
+                  // ── Check if Suspended ──
+                  if (userModel.isSuspended) {
+                    final dateStr = DateFormat('dd MMM yyyy, HH:mm').format(userModel.suspendedUntil!);
+                    return _RestrictedAccessScreen(
+                      title: 'Account Suspended',
+                      message: 'Your account is temporarily suspended until $dateStr.',
+                      icon: Icons.timer_rounded,
+                    );
+                  }
+
                   if(userModel.role == Role.admin) {
                     return const AdminHomePage();
                   } else {
@@ -106,8 +122,6 @@ class MyApp extends StatelessWidget {
                   }
                 }
 
-                // Document ยังไม่มี → แสดง loading รอ
-                // (อาจเกิดระหว่าง register ก่อน Firestore doc จะถูกสร้าง)
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
                 );
@@ -116,6 +130,57 @@ class MyApp extends StatelessWidget {
           }
           return const LoginPage();
         }
+      ),
+    );
+  }
+}
+
+class _RestrictedAccessScreen extends StatelessWidget {
+  final String title;
+  final String message;
+  final IconData icon;
+
+  const _RestrictedAccessScreen({
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFCF9EA),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 80, color: Colors.red),
+              const SizedBox(height: 24),
+              Text(
+                title,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1C1B1F)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Color(0xFF6B6874)),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () => FirebaseAuth.instance.signOut(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7BBFBA),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

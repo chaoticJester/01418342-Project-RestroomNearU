@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/restroom_model.dart';
 import '../../models/review_model.dart';
+import '../../models/user_model.dart';
 import '../../services/restroom_firestore.dart';
 import '../../services/review_firestore.dart';
 import 'photo_gallery_page.dart';
@@ -47,6 +48,7 @@ class RestroomDetailPage extends StatefulWidget {
 class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
+  bool isAdmin = false; // Added: Track if user is admin
   final _userService = UserService();
   List<ReviewModel> reviews = [];
   Map<int, int> starDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
@@ -73,6 +75,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     super.initState();
     _restroom = widget.restroom;
     _loadFavoriteState();
+    _checkAdminStatus(); // Added: Check admin status
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
@@ -89,6 +92,14 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       setState(() {
         isFavorite = user.favoriteRestrooms.contains(widget.restroom.restroomId);
       });
+    }
+  }
+
+  // Added: Check if current user is an admin
+  Future<void> _checkAdminStatus() async {
+    final isUserAdmin = await _userService.isAdmin();
+    if (mounted) {
+      setState(() => isAdmin = isUserAdmin);
     }
   }
 
@@ -325,8 +336,44 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     }
   }
 
+  Future<void> _handleDeleteReview(ReviewModel review) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Review?'),
+        content: const Text('Are you sure you want to delete this review? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ReviewService().deleteReview(review.reviewId, review.rating, review.restroomId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Review deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete review: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -340,11 +387,11 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               SliverToBoxAdapter(child: _buildTitleBar()),
               SliverToBoxAdapter(child: _buildInfoCards()),
               SliverToBoxAdapter(child: _buildRatingBreakdownCard()),
-              SliverToBoxAdapter(child: _buildCategoryRatingsCard()), // Added
+              SliverToBoxAdapter(child: _buildCategoryRatingsCard()),
               SliverToBoxAdapter(child: _buildAmenitiesCard()),
               SliverToBoxAdapter(child: _buildPhotosCard()),
               SliverToBoxAdapter(child: _buildActionButtons()),
-              SliverToBoxAdapter(child: _buildReviewsSection()),
+              SliverToBoxAdapter(child: _buildReviewsSection(currentUserId)),
               const SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
           ),
@@ -650,7 +697,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Category ratings card (New!) ─────────────────────────────────────
   Widget _buildCategoryRatingsCard() {
     if (_restroom.totalRatings == 0) return const SizedBox.shrink();
 
@@ -887,7 +933,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  Widget _buildReviewsSection() {
+  Widget _buildReviewsSection(String? currentUserId) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
       child: _SectionCard(
@@ -959,6 +1005,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             const SizedBox(height: 12),
             ...reviews.map((r) => _ReviewCard(
                   review: r,
+                  isOwnerOrAdmin: currentUserId == r.reviewerId || isAdmin, // UPDATED: check if admin
                   isHelpful: helpfulReviewIds.contains(r.reviewId),
                   onHelpfulTap: () => setState(() {
                     if (helpfulReviewIds.contains(r.reviewId)) {
@@ -968,6 +1015,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                       HapticFeedback.lightImpact();
                     }
                   }),
+                  onDeleteTap: () => _handleDeleteReview(r),
                   onReadMore: () => _showFullReview(r),
                 )),
           ],
@@ -1144,9 +1192,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   }
 }
 
-// ─────────────────────────────────────────────
-// Category Rating Row Widget
-// ─────────────────────────────────────────────
 class _CategoryRatingRow extends StatelessWidget {
   final String label;
   final double score;
@@ -1433,14 +1478,18 @@ class _ActionBtnState extends State<_ActionBtn>
 
 class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
+  final bool isOwnerOrAdmin; // Renamed
   final bool isHelpful;
   final VoidCallback onHelpfulTap;
+  final VoidCallback onDeleteTap;
   final VoidCallback onReadMore;
 
   const _ReviewCard({
     required this.review,
+    required this.isOwnerOrAdmin, // Renamed
     required this.isHelpful,
     required this.onHelpfulTap,
+    required this.onDeleteTap,
     required this.onReadMore,
   });
 
@@ -1526,6 +1575,20 @@ class _ReviewCard extends StatelessWidget {
                           color: _C.orange)),
                 ]),
               ),
+              if (isOwnerOrAdmin) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onDeleteTap,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
