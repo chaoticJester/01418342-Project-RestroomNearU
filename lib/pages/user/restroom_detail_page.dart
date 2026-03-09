@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/restroom_model.dart';
 import '../../models/review_model.dart';
+import '../../models/user_model.dart';
 import '../../services/restroom_firestore.dart';
 import '../../services/review_firestore.dart';
 import 'photo_gallery_page.dart';
@@ -47,6 +48,7 @@ class RestroomDetailPage extends StatefulWidget {
 class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
+  bool isAdmin = false; // Added: Track if user is admin
   final _userService = UserService();
   List<ReviewModel> reviews = [];
   Map<int, int> starDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
@@ -56,7 +58,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   final Set<String> helpfulReviewIds = {};
   bool _isUploadingPhoto = false;
 
-  // Live restroom data (avgRating / totalRatings update when reviews come in)
   late RestroomModel _restroom;
 
   late AnimationController _enterCtrl;
@@ -74,6 +75,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     super.initState();
     _restroom = widget.restroom;
     _loadFavoriteState();
+    _checkAdminStatus(); // Added: Check admin status
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
@@ -90,6 +92,14 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       setState(() {
         isFavorite = user.favoriteRestrooms.contains(widget.restroom.restroomId);
       });
+    }
+  }
+
+  // Added: Check if current user is an admin
+  Future<void> _checkAdminStatus() async {
+    final isUserAdmin = await _userService.isAdmin();
+    if (mounted) {
+      setState(() => isAdmin = isUserAdmin);
     }
   }
 
@@ -131,7 +141,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       debugPrint("Error getting location: $e");
     }
 
-    // Stream live restroom doc so avgRating/totalRatings stay current
     FirebaseFirestore.instance
         .collection('restrooms')
         .doc(widget.restroom.restroomId)
@@ -156,7 +165,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     });
   }
 
-  // Count how many reviews gave each star rating (1–5)
   Map<int, int> _calculateStarDistribution(List<ReviewModel> currentReviews) {
     final dist = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
     for (final r in currentReviews) {
@@ -182,7 +190,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     });
   }
 
-  // ── Navigation helpers ──────────────────────────────────────────────
   void _openGallery({int index = 0}) {
     if (_restroom.photos.isEmpty) return;
     Navigator.push(context, MaterialPageRoute(
@@ -204,7 +211,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     )).then((_) => _loadData());
   }
 
-  // ── Add Photo ────────────────────────────────────────────────────────
   void _showAddPhotoSheet() {
     showModalBottomSheet(
       context: context,
@@ -285,7 +291,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
       final downloadUrl = await uploadTask.ref.getDownloadURL();
 
-      // Append URL to Firestore photos array
       await FirebaseFirestore.instance
           .collection('restrooms')
           .doc(_restroom.restroomId)
@@ -296,7 +301,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
       if (mounted) {
         setState(() {
-          // Optimistically update local list
           _restroom.photos.add(downloadUrl);
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -332,9 +336,44 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     }
   }
 
-  // ── Build ────────────────────────────────────────────────────────────
+  Future<void> _handleDeleteReview(ReviewModel review) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Review?'),
+        content: const Text('Are you sure you want to delete this review? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ReviewService().deleteReview(review.reviewId, review.rating, review.restroomId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Review deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete review: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -348,10 +387,11 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
               SliverToBoxAdapter(child: _buildTitleBar()),
               SliverToBoxAdapter(child: _buildInfoCards()),
               SliverToBoxAdapter(child: _buildRatingBreakdownCard()),
+              SliverToBoxAdapter(child: _buildCategoryRatingsCard()),
               SliverToBoxAdapter(child: _buildAmenitiesCard()),
               SliverToBoxAdapter(child: _buildPhotosCard()),
               SliverToBoxAdapter(child: _buildActionButtons()),
-              SliverToBoxAdapter(child: _buildReviewsSection()),
+              SliverToBoxAdapter(child: _buildReviewsSection(currentUserId)),
               const SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
           ),
@@ -360,11 +400,9 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Header image ─────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Stack(
       children: [
-        // Photo / placeholder
         GestureDetector(
           onTap: _openGallery,
           child: Container(
@@ -381,8 +419,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                 : const Icon(Icons.wc_rounded, size: 72, color: _C.pink),
           ),
         ),
-
-        // Gradient scrim at bottom so title bar feels connected
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Container(
@@ -396,8 +432,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             ),
           ),
         ),
-
-        // Back button
         Positioned(
           top: 52, left: 12,
           child: _CircleButton(
@@ -405,8 +439,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             onTap: () { HapticFeedback.lightImpact(); Navigator.pop(context); },
           ),
         ),
-
-        // Favourite button
         Positioned(
           top: 52, right: 12,
           child: _FavouriteButton(
@@ -418,7 +450,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Title + rating bar ────────────────────────────────────────────────
   Widget _buildTitleBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
@@ -441,7 +472,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    // Rating chip
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
@@ -484,7 +514,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Open / closed chip
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
@@ -524,7 +553,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Info cards row (Location / Hours / Price) ────────────────────────
   Widget _buildInfoCards() {
     final hours = _restroom.is24hrs
         ? '24 Hours'
@@ -558,7 +586,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Rating breakdown card ─────────────────────────────────────────────
   Widget _buildRatingBreakdownCard() {
     final total = reviews.length;
     final avg   = _restroom.avgRating;
@@ -583,7 +610,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Left: big average score
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -617,10 +643,8 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                     ],
                   ),
                   const SizedBox(width: 16),
-                  // Vertical divider
                   Container(width: 1, height: 90, color: _C.divider),
                   const SizedBox(width: 16),
-                  // Right: star distribution bars 5 → 1
                   Expanded(
                     child: Column(
                       children: [5, 4, 3, 2, 1].map((star) {
@@ -673,7 +697,49 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Amenities card ────────────────────────────────────────────────────
+  Widget _buildCategoryRatingsCard() {
+    if (_restroom.totalRatings == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      child: _SectionCard(
+        title: 'Category Ratings',
+        icon: Icons.category_rounded,
+        child: Column(
+          children: [
+            _CategoryRatingRow(
+              label: 'Cleanliness',
+              score: _restroom.avgCleanliness,
+              icon: Icons.cleaning_services_rounded,
+              color: _C.mint,
+            ),
+            const SizedBox(height: 12),
+            _CategoryRatingRow(
+              label: 'Availability',
+              score: _restroom.avgAvailability,
+              icon: Icons.door_front_door_rounded,
+              color: _C.pink,
+            ),
+            const SizedBox(height: 12),
+            _CategoryRatingRow(
+              label: 'Amenities',
+              score: _restroom.avgAmenities,
+              icon: Icons.chair_rounded,
+              color: _C.orange,
+            ),
+            const SizedBox(height: 12),
+            _CategoryRatingRow(
+              label: 'Scent',
+              score: _restroom.avgScent,
+              icon: Icons.air_rounded,
+              color: _C.mintDark,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAmenitiesCard() {
     final amenities = _restroom.amenities.entries.toList();
     return Padding(
@@ -736,7 +802,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Photos card ───────────────────────────────────────────────────────
   Widget _buildPhotosCard() {
     final photos = _restroom.photos;
     return Padding(
@@ -799,7 +864,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                       if (i < photos.length)
                         Image.network(photos[i], fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => const SizedBox()),
-                      // "more" overlay on last tile
                       if (i == 5 && photos.length > 6)
                         Container(
                           color: Colors.black54,
@@ -819,7 +883,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Action buttons ────────────────────────────────────────────────────
   Widget _buildActionButtons() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -870,8 +933,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     );
   }
 
-  // ── Reviews section ───────────────────────────────────────────────────
-  Widget _buildReviewsSection() {
+  Widget _buildReviewsSection(String? currentUserId) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
       child: _SectionCard(
@@ -906,7 +968,6 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Sort filter chip
             GestureDetector(
               onTap: _showSortSheet,
               child: Container(
@@ -944,6 +1005,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             const SizedBox(height: 12),
             ...reviews.map((r) => _ReviewCard(
                   review: r,
+                  isOwnerOrAdmin: currentUserId == r.reviewerId || isAdmin, // UPDATED: check if admin
                   isHelpful: helpfulReviewIds.contains(r.reviewId),
                   onHelpfulTap: () => setState(() {
                     if (helpfulReviewIds.contains(r.reviewId)) {
@@ -953,6 +1015,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                       HapticFeedback.lightImpact();
                     }
                   }),
+                  onDeleteTap: () => _handleDeleteReview(r),
                   onReadMore: () => _showFullReview(r),
                 )),
           ],
@@ -1129,9 +1192,70 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   }
 }
 
-// ─────────────────────────────────────────────
-// Section Card (reusable — same as profile/add)
-// ─────────────────────────────────────────────
+class _CategoryRatingRow extends StatelessWidget {
+  final String label;
+  final double score;
+  final IconData icon;
+  final Color color;
+
+  const _CategoryRatingRow({
+    required this.label,
+    required this.score,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 15, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _C.textDark,
+                ),
+              ),
+            ),
+            Text(
+              score.toStringAsFixed(1),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+            const Text('/5.0', style: TextStyle(fontSize: 10, color: _C.textLight)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            value: score / 5.0,
+            minHeight: 6,
+            backgroundColor: _C.divider.withOpacity(0.5),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionCard extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -1157,10 +1281,6 @@ class _SectionCard extends StatelessWidget {
               color: Colors.black.withOpacity(0.06),
               blurRadius: 16,
               offset: const Offset(0, 4)),
-          BoxShadow(
-              color: Colors.white.withOpacity(0.8),
-              blurRadius: 0,
-              offset: const Offset(0, 0)),
         ],
       ),
       child: Column(
@@ -1179,13 +1299,6 @@ class _SectionCard extends StatelessWidget {
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _C.pink.withOpacity(0.15),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                   ),
                   child: Icon(icon, size: 16, color: _C.pink),
                 ),
@@ -1209,9 +1322,6 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Info Row (inside Details card)
-// ─────────────────────────────────────────────
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -1275,9 +1385,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Thin divider
-// ─────────────────────────────────────────────
 class _Divider extends StatelessWidget {
   const _Divider();
   @override
@@ -1285,9 +1392,6 @@ class _Divider extends StatelessWidget {
       Divider(color: _C.divider, height: 1, thickness: 1);
 }
 
-// ─────────────────────────────────────────────
-// Action button (Direction / Review / Photo / Report)
-// ─────────────────────────────────────────────
 class _ActionBtn extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -1372,19 +1476,20 @@ class _ActionBtnState extends State<_ActionBtn>
   }
 }
 
-// ─────────────────────────────────────────────
-// Review card
-// ─────────────────────────────────────────────
 class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
+  final bool isOwnerOrAdmin; // Renamed
   final bool isHelpful;
   final VoidCallback onHelpfulTap;
+  final VoidCallback onDeleteTap;
   final VoidCallback onReadMore;
 
   const _ReviewCard({
     required this.review,
+    required this.isOwnerOrAdmin, // Renamed
     required this.isHelpful,
     required this.onHelpfulTap,
+    required this.onDeleteTap,
     required this.onReadMore,
   });
 
@@ -1414,10 +1519,8 @@ class _ReviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
           Row(
             children: [
-              // Avatar
               Container(
                 width: 38, height: 38,
                 decoration: BoxDecoration(
@@ -1427,13 +1530,6 @@ class _ReviewCard extends StatelessWidget {
                     end: Alignment.bottomRight,
                   ),
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _C.pink.withOpacity(0.2),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
                 ),
                 child: const Icon(Icons.person_rounded,
                     size: 20, color: _C.pink),
@@ -1454,7 +1550,6 @@ class _ReviewCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // Rating chip
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1468,13 +1563,6 @@ class _ReviewCard extends StatelessWidget {
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _C.orange.withOpacity(0.15),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.star_rounded,
@@ -1487,10 +1575,23 @@ class _ReviewCard extends StatelessWidget {
                           color: _C.orange)),
                 ]),
               ),
+              if (isOwnerOrAdmin) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onDeleteTap,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
-          // Badge
           Container(
             padding:
                 const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -1501,13 +1602,6 @@ class _ReviewCard extends StatelessWidget {
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: _C.pink.withOpacity(0.12),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
             child: Text(ReviewService().getRatingBadge(review.rating),
                 style: const TextStyle(
@@ -1516,17 +1610,14 @@ class _ReviewCard extends StatelessWidget {
                     color: _C.pink)),
           ),
           const SizedBox(height: 8),
-          // Comment
           Text(review.comment,
               style: const TextStyle(
                   fontSize: 12, color: _C.textMid, height: 1.5),
               maxLines: 3,
               overflow: TextOverflow.ellipsis),
           const SizedBox(height: 10),
-          // Footer
           Row(
             children: [
-              // Helpful button
               GestureDetector(
                 onTap: onHelpfulTap,
                 child: AnimatedContainer(
@@ -1543,15 +1634,6 @@ class _ReviewCard extends StatelessWidget {
                         : null,
                     color: isHelpful ? null : _C.divider.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(10),
-                    boxShadow: isHelpful
-                        ? [
-                            BoxShadow(
-                              color: _C.pink.withOpacity(0.2),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                        : null,
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(
@@ -1591,9 +1673,6 @@ class _ReviewCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Photo source button (Camera / Gallery)
-// ─────────────────────────────────────────────
 class _PhotoSourceButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1641,13 +1720,6 @@ class _PhotoSourceButton extends StatelessWidget {
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
               ),
               child: Icon(icon, size: 26, color: color),
             ),
@@ -1664,10 +1736,6 @@ class _PhotoSourceButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Animated Favourite button (top-right of header)
-// Tappable, toggles locally, never saved
-// ─────────────────────────────────────────────
 class _FavouriteButton extends StatefulWidget {
   final bool isFavorite;
   final Future<void> Function() onTap;
@@ -1690,7 +1758,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    // Heart pops to 1.35 then settles back to 1.0
     _scaleAnim = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35)
           .chain(CurveTween(curve: Curves.easeOut)), weight: 40),
@@ -1699,7 +1766,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
       TweenSequenceItem(tween: Tween(begin: 0.90, end: 1.0)
           .chain(CurveTween(curve: Curves.elasticOut)), weight: 30),
     ]).animate(_ctrl);
-    // Burst ring fades out
     _burstAnim = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
   }
@@ -1724,7 +1790,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Burst ring
                 if (_ctrl.isAnimating)
                   Opacity(
                     opacity: (1 - _burstAnim.value).clamp(0.0, 1.0),
@@ -1744,7 +1809,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
                       ),
                     ),
                   ),
-                // Circle background
                 Container(
                   width: 48, height: 48,
                   decoration: BoxDecoration(
@@ -1761,7 +1825,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
                     ],
                   ),
                 ),
-                // Heart icon with scale animation
                 Transform.scale(
                   scale: _scaleAnim.value,
                   child: Icon(
@@ -1781,9 +1844,6 @@ class _FavouriteButtonState extends State<_FavouriteButton>
   }
 }
 
-// ─────────────────────────────────────────────
-// White circle button (back / favourite)
-// ─────────────────────────────────────────────
 class _CircleButton extends StatefulWidget {
   final IconData icon;
   final Color? iconColor;

@@ -150,7 +150,7 @@ class _WriteReviewPageState extends State<WriteReviewPage>
       }
 
 
-      final userModel = await UserService().getUserById(firebaseUser!.uid);
+      final userModel = await UserService().getUserById(firebaseUser.uid);
 
       final reviewRef = FirebaseFirestore.instance.collection("reviews").doc();
       final tempId = reviewRef.id;
@@ -165,9 +165,14 @@ class _WriteReviewPageState extends State<WriteReviewPage>
         reviewId: tempId,
         restroomId: widget.restroomId,
         reviewerId: firebaseUser.uid,
-        reviewerName: userModel?.displayName ?? firebaseUser.displayName ?? 'Anonymouse',
+        reviewerName: userModel?.displayName ?? firebaseUser.displayName ?? 'Anonymous',
         reviewerPhotoUrl: firebaseUser.photoURL ?? '',
         rating: overallRating,
+        cleanlinessRating: cleanlinessRating,
+        availabilityRating: availabilityRating,
+        amenitiesRating: amenitiesRating,
+        smellRating: smellRating,
+        amenitiesFound: amenitiesFound,
         comment: _commentController.text.trim(),
         photos: uploadedUrls,
       );
@@ -426,7 +431,7 @@ class _WriteReviewPageState extends State<WriteReviewPage>
         Container(
           height: 200,
           width: double.infinity,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [_C.teal, _C.tealDark],
               begin: Alignment.topLeft,

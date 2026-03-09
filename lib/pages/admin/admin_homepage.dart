@@ -454,7 +454,7 @@ class _AdminHomePageState extends State<AdminHomePage>
         'value': _activeUsers,
         'color': _C.tealDark,
         'icon': Icons.people_rounded,
-        'route': null,
+        'route': '/admin_users', // FIXED: Added route here
         'bgColor': _C.teal.withOpacity(0.25),
       },
     ];

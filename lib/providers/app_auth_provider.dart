@@ -23,7 +23,7 @@ class AppAuthProvider extends ChangeNotifier {
       _setLoading(true);
       
       // 1. สร้างบัญชีใน Firebase Auth
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+      await _auth.createUserWithEmailAndPassword(
         email: email, 
         password: password
       );
@@ -33,7 +33,9 @@ class AppAuthProvider extends ChangeNotifier {
       final user = _auth.currentUser;
 
       if (user == null) {
-        _showError(context, "Registration failed. Please try again.");
+        if (context.mounted) {
+          _showError(context, "Registration failed. Please try again.");
+        }
         return;
       }
 
@@ -74,10 +76,14 @@ class AppAuthProvider extends ChangeNotifier {
       String message = "Error occurred: ${e.message}";
       if (e.code == 'weak-password') message = "Password must have at least 6 characters.";
       if (e.code == 'email-already-in-use') message = "This email is already used.";
-      _showError(context, message);
+      if (context.mounted) {
+        _showError(context, message);
+      }
     } catch (e) { 
-      _showError(context, "Error: ${e.toString()}");
-      print("Register error: $e");
+      if (context.mounted) {
+        _showError(context, "Error: ${e.toString()}");
+      }
+      debugPrint("Register error: $e");
     } finally {
       _setLoading(false);
     }
@@ -97,7 +103,9 @@ class AppAuthProvider extends ChangeNotifier {
 
       
     } on FirebaseAuthException catch (e) {
-      _showError(context, "Login failed: ${e.message}");
+      if (context.mounted) {
+        _showError(context, "Login failed: ${e.message}");
+      }
     } finally {
       _setLoading(false);
     }
@@ -129,8 +137,10 @@ class AppAuthProvider extends ChangeNotifier {
       await _userService.syncUserWithFirestore();
 
     } catch (e) {
-      _showError(context, "Login with google failed.");
-      print(e);
+      if (context.mounted) {
+        _showError(context, "Login with google failed.");
+      }
+      debugPrint(e.toString());
     } finally {
       _setLoading(false);
     }
@@ -174,7 +184,9 @@ class AppAuthProvider extends ChangeNotifier {
       String message = "Error: ${e.message}";
       if (e.code == 'user-not-found') message = "No user found for that email.";
       
-      _showError(context, message);
+      if (context.mounted) {
+        _showError(context, message);
+      }
     } finally {
       _setLoading(false);
     }

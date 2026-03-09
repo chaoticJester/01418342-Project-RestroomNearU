@@ -16,6 +16,10 @@ class RestroomModel {
   final List<String> photos;
   final List<String> reviewIds;
   final double avgRating; 
+  final double avgCleanliness;
+  final double avgAvailability;
+  final double avgAmenities;
+  final double avgScent;
   final int totalRatings;
   
   // Timestamp fields
@@ -40,6 +44,10 @@ class RestroomModel {
     this.photos = const [],
     this.reviewIds = const [],
     this.avgRating = 0.0,
+    this.avgCleanliness = 0.0,
+    this.avgAvailability = 0.0,
+    this.avgAmenities = 0.0,
+    this.avgScent = 0.0,
     this.totalRatings = 0,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -67,6 +75,10 @@ class RestroomModel {
       photos: List<String>.from(map['photos'] ?? []),
       reviewIds: List<String>.from(map['reviewIds'] ?? []),
       avgRating: (map['avgRating'] ?? 0.0).toDouble(),
+      avgCleanliness: (map['avgCleanliness'] ?? 0.0).toDouble(),
+      avgAvailability: (map['avgAvailability'] ?? 0.0).toDouble(),
+      avgAmenities: (map['avgAmenities'] ?? 0.0).toDouble(),
+      avgScent: (map['avgScent'] ?? 0.0).toDouble(),
       totalRatings: (map['totalRatings'] ?? 0).toInt(),
       createdAt: map['createdAt'] != null 
           ? (map['createdAt'] as Timestamp).toDate() 
@@ -96,6 +108,10 @@ class RestroomModel {
       'photos': photos,
       'reviewIds': reviewIds,
       'avgRating': avgRating,
+      'avgCleanliness': avgCleanliness,
+      'avgAvailability': avgAvailability,
+      'avgAmenities': avgAmenities,
+      'avgScent': avgScent,
       'totalRatings': totalRatings,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -120,6 +136,10 @@ class RestroomModel {
     List<String>? photos,
     List<String>? reviewIds,
     double? avgRating,
+    double? avgCleanliness,
+    double? avgAvailability,
+    double? avgAmenities,
+    double? avgScent,
     int? totalRatings,
     DateTime? updatedAt,
     String? updatedBy,
@@ -140,6 +160,10 @@ class RestroomModel {
       photos: photos ?? this.photos,
       reviewIds: reviewIds ?? this.reviewIds,
       avgRating: avgRating ?? this.avgRating,
+      avgCleanliness: avgCleanliness ?? this.avgCleanliness,
+      avgAvailability: avgAvailability ?? this.avgAvailability,
+      avgAmenities: avgAmenities ?? this.avgAmenities,
+      avgScent: avgScent ?? this.avgScent,
       totalRatings: totalRatings ?? this.totalRatings,
       createdAt: this.createdAt, // Never change
       updatedAt: updatedAt ?? DateTime.now(), // Auto-update to now

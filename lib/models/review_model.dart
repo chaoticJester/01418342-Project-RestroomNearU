@@ -7,6 +7,11 @@ class ReviewModel {
   final String reviewerName;
   final String reviewerPhotoUrl;
   final double rating;
+  final double cleanlinessRating;
+  final double availabilityRating;
+  final double amenitiesRating;
+  final double smellRating;
+  final Map<String, bool> amenitiesFound;
   final String comment;
   final DateTime timestamp;      // When the review was posted (same as createdAt)
   final DateTime createdAt;      // When created
@@ -23,6 +28,11 @@ class ReviewModel {
     required this.reviewerName,
     this.reviewerPhotoUrl = '',
     required this.rating,
+    this.cleanlinessRating = 0.0,
+    this.availabilityRating = 0.0,
+    this.amenitiesRating = 0.0,
+    this.smellRating = 0.0,
+    this.amenitiesFound = const {},
     required this.comment,
     DateTime? timestamp,
     DateTime? createdAt,
@@ -49,6 +59,11 @@ class ReviewModel {
       reviewerName: map['reviewerName'] ?? 'Anonymous',
       reviewerPhotoUrl: map['reviewerPhotoUrl'] ?? '',
       rating: (map['rating'] ?? 0.0).toDouble(),
+      cleanlinessRating: (map['cleanlinessRating'] ?? 0.0).toDouble(),
+      availabilityRating: (map['availabilityRating'] ?? 0.0).toDouble(),
+      amenitiesRating: (map['amenitiesRating'] ?? 0.0).toDouble(),
+      smellRating: (map['smellRating'] ?? 0.0).toDouble(),
+      amenitiesFound: Map<String, bool>.from(map['amenitiesFound'] ?? {}),
       comment: map['comment'] ?? '',
       timestamp: reviewTime,
       createdAt: map['createdAt'] != null
@@ -72,6 +87,11 @@ class ReviewModel {
       'reviewerName': reviewerName,
       'reviewerPhotoUrl': reviewerPhotoUrl,
       'rating': rating,
+      'cleanlinessRating': cleanlinessRating,
+      'availabilityRating': availabilityRating,
+      'amenitiesRating': amenitiesRating,
+      'smellRating': smellRating,
+      'amenitiesFound': amenitiesFound,
       'comment': comment,
       'timestamp': Timestamp.fromDate(timestamp),
       'createdAt': Timestamp.fromDate(createdAt),
@@ -89,6 +109,11 @@ class ReviewModel {
   // Helper method to create a copy with updated fields
   ReviewModel copyWith({
     double? rating,
+    double? cleanlinessRating,
+    double? availabilityRating,
+    double? amenitiesRating,
+    double? smellRating,
+    Map<String, bool>? amenitiesFound,
     String? comment,
     List<String>? photos,
     int? totalLikes,
@@ -102,6 +127,11 @@ class ReviewModel {
       reviewerName: this.reviewerName,
       reviewerPhotoUrl: this.reviewerPhotoUrl,
       rating: rating ?? this.rating,
+      cleanlinessRating: cleanlinessRating ?? this.cleanlinessRating,
+      availabilityRating: availabilityRating ?? this.availabilityRating,
+      amenitiesRating: amenitiesRating ?? this.amenitiesRating,
+      smellRating: smellRating ?? this.smellRating,
+      amenitiesFound: amenitiesFound ?? this.amenitiesFound,
       comment: comment ?? this.comment,
       timestamp: this.timestamp, // Keep original post time
       createdAt: this.createdAt, // Never change

@@ -133,6 +133,10 @@ class _UserHomePageState extends State<UserHomePage>
   final Set<String> _favoriteIds = {};
   final _userService = UserService();
 
+  // Device pixel ratio
+  double _dpr = 1.0;
+  bool _dprInitialized = false;
+
   Future<void> _loadFavorites() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -149,7 +153,6 @@ class _UserHomePageState extends State<UserHomePage>
   Future<void> _toggleFavorite(String restroomId) async {
     HapticFeedback.lightImpact();
     final isFav = _favoriteIds.contains(restroomId);
-    // Optimistic update — UI responds instantly
     setState(() {
       if (isFav) {
         _favoriteIds.remove(restroomId);
@@ -157,7 +160,6 @@ class _UserHomePageState extends State<UserHomePage>
         _favoriteIds.add(restroomId);
       }
     });
-    // Persist to Firestore
     if (isFav) {
       await _userService.removeFavoriteRestroom(restroomId);
     } else {
@@ -182,22 +184,16 @@ class _UserHomePageState extends State<UserHomePage>
     _buildAllMarkers();
   }
 
-  // Cached bitmaps keyed by "restroomId:tierIndex:selected"
   final Map<String, BitmapDescriptor> _bitmapCache = {};
 
-  // Selected marker popup animation
   late AnimationController _popupCtrl;
   late Animation<double> _popupFade;
   late Animation<Offset> _popupSlide;
 
-  // Device pixel ratio — read once
-  late double _dpr;
-
   @override
   void initState() {
     super.initState();
-    _dpr = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
-
+    
     _listEntryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -217,13 +213,25 @@ class _UserHomePageState extends State<UserHomePage>
       if (mounted) {
         setState(() {
           restrooms = data;
-          _buildAllMarkers(); 
+          if (_dprInitialized) _buildAllMarkers(); 
         });
       }
     });
     
     _loadFavorites();
     _checkLocationPermission();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Get DPR safely from context
+    final newDpr = MediaQuery.of(context).devicePixelRatio;
+    if (!_dprInitialized || _dpr != newDpr) {
+      _dpr = newDpr;
+      _dprInitialized = true;
+      _buildAllMarkers();
+    }
   }
 
   Future<void> _checkLocationPermission() async {
@@ -239,7 +247,6 @@ class _UserHomePageState extends State<UserHomePage>
 
     if (mounted) {
       setState(() => _myLocationEnabled = true);
-      // เมื่อได้สิทธิ์แล้ว สั่งให้กล้องเลื่อนไปหาผู้ใช้เลยทันทีตอนเปิดแอป
       _goToCurrentLocation(); 
     }
   }
@@ -253,10 +260,10 @@ class _UserHomePageState extends State<UserHomePage>
       final GoogleMapController controller = await _mapCompleter.future;
       controller.animateCamera(CameraUpdate.newLatLngZoom(
         LatLng(position.latitude, position.longitude),
-        16.5, // ซูมเข้ามาให้เห็นชัดๆ
+        16.5,
       ));
     } catch (e) {
-      print("Error locating user: $e");
+      debugPrint("Error locating user: $e");
     }
   }
 
@@ -270,10 +277,10 @@ class _UserHomePageState extends State<UserHomePage>
     _searchController.dispose();
     super.dispose();
   }
-  // ── Camera move — debounced zoom rebuild ────────────────────────────────
+
   void _onCameraMove(CameraPosition pos) {
     final newZoom = pos.zoom;
-    if ((newZoom - _currentZoom).abs() < 0.3) return; // skip tiny changes
+    if ((newZoom - _currentZoom).abs() < 0.3) return; 
     _currentZoom = newZoom;
 
     _zoomDebounce?.cancel();
@@ -286,8 +293,8 @@ class _UserHomePageState extends State<UserHomePage>
     });
   }
 
-  // ── Build / update all markers for current tier ─────────────────────────
   Future<void> _buildAllMarkers() async {
+    if (!_dprInitialized) return;
     final Map<MarkerId, Marker> fresh = {};
     for (final r in _filteredRestrooms) {
       final isSelected = _selectedRestroom?.restroomId == r.restroomId;
@@ -300,11 +307,11 @@ class _UserHomePageState extends State<UserHomePage>
       ..addAll(fresh); });
   }
 
-  /// Rebuilds only the two markers affected by a selection change.
   Future<void> _refreshSelectionMarkers({
     RestroomModel? prev,
     RestroomModel? next,
   }) async {
+    if (!_dprInitialized) return;
     final updates = <MarkerId, Marker>{};
     for (final r in [prev, next]) {
       if (r == null) continue;
@@ -329,7 +336,6 @@ class _UserHomePageState extends State<UserHomePage>
     );
   }
 
-  /// Returns a (possibly cached) BitmapDescriptor for [r] at [tier].
   Future<BitmapDescriptor> _iconForTier(
       RestroomModel r, _MarkerTier tier, {bool isSelected = false}) async {
     final key = '${r.restroomId}:${tier.minZoom}:${isSelected ? 's' : 'n'}';
@@ -339,13 +345,10 @@ class _UserHomePageState extends State<UserHomePage>
     return bmp;
   }
 
-  // ── Rasterise one marker bitmap ─────────────────────────────────────────
   static Future<BitmapDescriptor> _renderMarker(
       RestroomModel r, _MarkerTier t, double dpr,
       {bool isSelected = false}) async {
     final bool showPill = t.pillHDp > 0;
-
-    // Logical canvas dimensions — no shadow so padding can be minimal
     const double gapDp  = 3.0;
     const double padDp  = 2.0;
     final double canvasWDp = t.cardDp + t.borderDp * 2 + padDp * 2;
@@ -355,7 +358,6 @@ class _UserHomePageState extends State<UserHomePage>
         + (showPill ? gapDp + t.pillHDp : 0)
         + padDp;
 
-    // Physical pixels
     final double s       = dpr;
     final double cardSz  = t.cardDp  * s;
     final double border  = t.borderDp * s;
@@ -373,8 +375,6 @@ class _UserHomePageState extends State<UserHomePage>
     final double cardLeft = cx - cardSz / 2;
     final double cardTop  = pad + border;
 
-    // 1 — border frame (white normally, orange when selected)
-    // [no drop shadow — removed per request]
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(cardLeft - border, cardTop - border,
@@ -382,22 +382,20 @@ class _UserHomePageState extends State<UserHomePage>
         Radius.circular(radius + border),
       ),
       Paint()..color = isSelected
-          ? const Color(0xFFE8753D)   // orange border when selected
+          ? const Color(0xFFE8753D)   
           : Colors.white,
     );
 
-    // 3 — card fill (darker teal when selected so it stands out)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(cardLeft, cardTop, cardSz, cardSz),
         Radius.circular(radius),
       ),
       Paint()..color = isSelected
-          ? const Color(0xFF4AADA7)   // saturated teal when selected
-          : const Color(0xFFBADFDB), // normal teal
+          ? const Color(0xFF4AADA7)   
+          : const Color(0xFFBADFDB), 
     );
 
-    // 4 — WC emoji (only draw if card is big enough)
     if (t.iconFontDp >= 14) {
       final iconTp = TextPainter(
         text: TextSpan(
@@ -412,12 +410,10 @@ class _UserHomePageState extends State<UserHomePage>
       ));
     }
 
-    // 5 — rating pill (only at close zoom)
     if (showPill) {
       final double pillTop  = cardTop + cardSz + border + gap;
       final double pillLeft = cx - pillW / 2;
 
-      // pill background  [no shadow — removed per request]
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(pillLeft, pillTop, pillW, pillH),
@@ -426,7 +422,6 @@ class _UserHomePageState extends State<UserHomePage>
         Paint()..color = Colors.white,
       );
 
-      // star
       final starTp = TextPainter(
         text: TextSpan(
           text: '⭐',
@@ -439,7 +434,6 @@ class _UserHomePageState extends State<UserHomePage>
         pillTop + (pillH - starTp.height) / 2,
       ));
 
-      // rating number
       final ratingTp = TextPainter(
         text: TextSpan(
           text: r.avgRating.toStringAsFixed(1),
@@ -458,26 +452,20 @@ class _UserHomePageState extends State<UserHomePage>
       ));
     }
 
-    // 6 — rasterise
     final picture  = recorder.endRecording();
     final image    = await picture.toImage(canvasW.round(), canvasH.round());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
     return BitmapDescriptor.fromBytes(
       byteData!.buffer.asUint8List(),
-      // Tell Google Maps the logical (dp) size → correct physical size on screen
       size: Size(canvasWDp, canvasHDp),
     );
   }
 
-  // ── Marker tap ──────────────────────────────────────────────────────────
   void _onMarkerTap(RestroomModel r) {
     HapticFeedback.selectionClick();
-
     final prev = _selectedRestroom;
-    // Update state first so _makeMarker picks up the new selection
     setState(() => _selectedRestroom = r);
-    // Swap bitmaps for only the two affected markers
     _refreshSelectionMarkers(prev: prev, next: r);
 
     _sheetController.animateTo(
@@ -496,7 +484,6 @@ class _UserHomePageState extends State<UserHomePage>
     _popupCtrl.forward(from: 0);
   }
 
-  // ── Dismiss popup ───────────────────────────────────────────────────────
   void _dismissPopup() {
     _popupCtrl.reverse().then((_) {
       if (!mounted) return;
@@ -526,16 +513,19 @@ class _UserHomePageState extends State<UserHomePage>
         backgroundColor: _C.bg,
         body: Stack(
           children: [
-            // ── Map ──────────────────────────────────────────
-           GoogleMap(
-              initialCameraPosition: _initialCamera,
-              zoomControlsEnabled: false,
-              myLocationEnabled: _myLocationEnabled, 
-              myLocationButtonEnabled: false,        
-              markers: Set<Marker>.of(_markers.values),
-              onMapCreated: (ctrl) => _mapCompleter.complete(ctrl),
-              onCameraMove: _onCameraMove,
-              onTap: (_) => _dismissPopup(),
+            // ── Map Container ──────────────────────────
+            Container(
+              color: _C.bg, // Fallback color while map loads
+              child: GoogleMap(
+                initialCameraPosition: _initialCamera,
+                zoomControlsEnabled: false,
+                myLocationEnabled: _myLocationEnabled, 
+                myLocationButtonEnabled: false,        
+                markers: Set<Marker>.of(_markers.values),
+                onMapCreated: (ctrl) => _mapCompleter.complete(ctrl),
+                onCameraMove: _onCameraMove,
+                onTap: (_) => _dismissPopup(),
+              ),
             ),
 
             // ── Marker popup card ─────────────────────────────
@@ -740,13 +730,11 @@ class _MarkerPopup extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
                     child: _AmenitiesRow(amenities: restroom.amenities),
                   ),
-                  // ── Two-button action row ───────────────────────
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(
                         bottom: Radius.circular(20)),
                     child: Row(
                       children: [
-                        // Navigate button — teal gradient
                         Expanded(
                           flex: 5,
                           child: GestureDetector(
@@ -776,9 +764,7 @@ class _MarkerPopup extends StatelessWidget {
                             ),
                           ),
                         ),
-                        // Thin divider
                         Container(width: 1, height: 44, color: Colors.white24),
-                        // View Details button — slightly lighter
                         Expanded(
                           flex: 5,
                           child: GestureDetector(
@@ -821,9 +807,6 @@ class _MarkerPopup extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Amenities row
-// ─────────────────────────────────────────────
 class _AmenitiesRow extends StatelessWidget {
   final Map<String, bool> amenities;
   const _AmenitiesRow({required this.amenities});
@@ -860,9 +843,6 @@ class _AmenitiesRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Bottom Sheet Content
-// ─────────────────────────────────────────────
 class _BottomSheetContent extends StatelessWidget {
   final ScrollController scrollController;
   final List<RestroomModel> restrooms;
@@ -955,7 +935,6 @@ class _BottomSheetContent extends StatelessWidget {
               ),
             ),
           ),
-          // ── Filter tabs: Nearby / Favorites ──────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -1000,9 +979,6 @@ class _BottomSheetContent extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Search Bar
-// ─────────────────────────────────────────────
 class _SearchBar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final TextEditingController controller;
@@ -1025,9 +1001,9 @@ class _SearchBar extends StatelessWidget {
           child: TextField(
             controller: controller,
             onChanged: onChanged,
-            style: TextStyle(
+            style: const TextStyle(
                 fontSize: 14, color: _C.textDark, fontWeight: FontWeight.w500),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               hintText: 'Search restrooms…',
               hintStyle: TextStyle(
                   color: _C.textLight, fontSize: 14, fontWeight: FontWeight.w400),
@@ -1043,9 +1019,6 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Restroom Card
-// ─────────────────────────────────────────────
 class _RestroomCard extends StatefulWidget {
   final RestroomModel restroom;
   final VoidCallback onPinTap;
@@ -1148,7 +1121,6 @@ class _RestroomCardState extends State<_RestroomCard>
               ]),
             ),
             const SizedBox(width: 8),
-            // Favorite heart button
             GestureDetector(
               onTap: widget.onToggleFavorite,
               child: AnimatedContainer(
@@ -1172,7 +1144,6 @@ class _RestroomCardState extends State<_RestroomCard>
               ),
             ),
             const SizedBox(width: 6),
-            // Navigate button on card
             GestureDetector(
               onTap: () {
                 HapticFeedback.mediumImpact();
@@ -1209,9 +1180,6 @@ class _RestroomCardState extends State<_RestroomCard>
   }
 }
 
-// ─────────────────────────────────────────────
-// Filter Tab Bar (Nearby / Favorites) — sliding indicator
-// ─────────────────────────────────────────────
 class _FilterTabBar extends StatefulWidget {
   final String activeTab;
   final int nearbyCount;
@@ -1281,7 +1249,6 @@ class _FilterTabBarState extends State<_FilterTabBar>
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // ── sliding white pill (behind labels) ──
                   Positioned(
                     top: 4, bottom: 4,
                     left: pillLeft + 4,
@@ -1300,11 +1267,9 @@ class _FilterTabBarState extends State<_FilterTabBar>
                       ),
                     ),
                   ),
-                  // ── tap targets + labels (always on top) ──
                   Positioned.fill(
                     child: Row(
                       children: [
-                        // Nearby
                         Expanded(
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -1347,7 +1312,6 @@ class _FilterTabBarState extends State<_FilterTabBar>
                             ),
                           ),
                         ),
-                        // Favorites
                         Expanded(
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
@@ -1403,9 +1367,6 @@ class _FilterTabBarState extends State<_FilterTabBar>
   }
 }
 
-// ─────────────────────────────────────────────
-// Mini chip
-// ─────────────────────────────────────────────
 class _MiniChip extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -1429,9 +1390,6 @@ class _MiniChip extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Status badge
-// ─────────────────────────────────────────────
 class _StatusBadge extends StatelessWidget {
   final bool isOpen;
   const _StatusBadge({required this.isOpen});
@@ -1453,9 +1411,6 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-// Circle icon button
-// ─────────────────────────────────────────────
 class _CircleIconButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -1514,9 +1469,6 @@ class _CircleIconButtonState extends State<_CircleIconButton>
   }
 }
 
-// ─────────────────────────────────────────────
-// Pill button
-// ─────────────────────────────────────────────
 class _PillButton extends StatefulWidget {
   final String label;
   final IconData icon;
@@ -1588,9 +1540,6 @@ class _PillButtonState extends State<_PillButton>
   }
 }
 
-// ─────────────────────────────────────────────
-// Page route
-// ─────────────────────────────────────────────
 Route<dynamic> _smoothRoute(Widget page) {
   return PageRouteBuilder(
     pageBuilder: (_, a, __) => page,

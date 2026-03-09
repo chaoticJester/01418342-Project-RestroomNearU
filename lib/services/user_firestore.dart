@@ -9,6 +9,11 @@ class UserService {
       FirebaseFirestore.instance.collection('users');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Points values for Level System
+  static const int pointsPerReview = 20;
+  static const int pointsPerRestroomAdded = 50;
+  static const int pointsPerHelpfulVote = 5;
+
   // CREATE / SYNC
   Future<void> syncUserWithFirestore() async {
     final User? firebaseUser = _auth.currentUser;
@@ -24,14 +29,12 @@ class UserService {
         email: firebaseUser.email ?? '',
         role: Role.user,
         totalReviews: 0,
+        points: 0,
         reviewIds: [],
         photoUrl: firebaseUser.photoURL,
         favoriteRestrooms: [],
       );
       await docRef.set(newUser.toMap());
-      print("New user created in Firestore");
-    } else {
-      print("User already exists, skipping create.");
     }
   }
 
@@ -74,6 +77,7 @@ class UserService {
     }
   }
 
+  /// ✅ RESTORED: Get user by email (needed for password reset check)
   Future<UserModel?> getUserByEmail(String email) async {
     try {
       final snapshot = await _userCollection
@@ -112,7 +116,26 @@ class UserService {
     await user.updateDisplayName(newName);
   }
 
-  /// ✅ NEW: Upload a profile photo to Firebase Storage and save URL to Firestore
+  Future<void> deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Delete Firestore data
+    await _userCollection.doc(user.uid).delete();
+    
+    // Delete profile photo from storage if exists
+    try {
+      await FirebaseStorage.instance
+          .ref()
+          .child('profile_photos/${user.uid}.jpg')
+          .delete();
+    } catch (_) {}
+
+    // Delete Auth account
+    await user.delete();
+  }
+
+  /// ✅ FIXED: Return download URL (needed for ProfileAvatarWidget)
   Future<String?> uploadProfilePhoto(File imageFile) async {
     final user = _auth.currentUser;
     if (user == null) return null;
@@ -128,13 +151,8 @@ class UserService {
       );
 
       final downloadUrl = await uploadTask.ref.getDownloadURL();
-
-      // Save URL to Firestore
       await _userCollection.doc(user.uid).update({'photoUrl': downloadUrl});
-
-      // Also update Firebase Auth profile
       await user.updatePhotoURL(downloadUrl);
-
       return downloadUrl;
     } catch (e) {
       print("Error uploading profile photo: $e");
@@ -142,22 +160,18 @@ class UserService {
     }
   }
 
-  /// ✅ NEW: Remove profile photo
+  /// ✅ RESTORED: Remove profile photo
   Future<void> removeProfilePhoto() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     try {
-      // Delete from Storage
       final ref = FirebaseStorage.instance
           .ref()
           .child('profile_photos/${user.uid}.jpg');
       await ref.delete();
-    } catch (_) {
-      // File might not exist, ignore
-    }
+    } catch (_) {}
 
-    // Remove URL from Firestore
     await _userCollection.doc(user.uid).update({'photoUrl': FieldValue.delete()});
     await user.updatePhotoURL(null);
   }
@@ -167,18 +181,21 @@ class UserService {
     if (user == null) return;
     await _userCollection.doc(user.uid).update({
       'totalAdded': FieldValue.increment(1),
+      'points': FieldValue.increment(pointsPerRestroomAdded),
     });
   }
 
   Future<void> incrementHelpfulCount(String userId) async {
     await _userCollection.doc(userId).update({
       'totalHelpful': FieldValue.increment(1),
+      'points': FieldValue.increment(pointsPerHelpfulVote),
     });
   }
 
   Future<void> decrementHelpfulCount(String userId) async {
     await _userCollection.doc(userId).update({
       'totalHelpful': FieldValue.increment(-1),
+      'points': FieldValue.increment(-pointsPerHelpfulVote),
     });
   }
 
@@ -189,6 +206,7 @@ class UserService {
     await _userCollection.doc(user.uid).update({
       'totalReviews': FieldValue.increment(1),
       'reviewIds': FieldValue.arrayUnion([reviewId]),
+      'points': FieldValue.increment(pointsPerReview),
     });
   }
 
@@ -199,13 +217,13 @@ class UserService {
     await _userCollection.doc(user.uid).update({
       'totalReviews': FieldValue.increment(-1),
       'reviewIds': FieldValue.arrayRemove([reviewId]),
+      'points': FieldValue.increment(-pointsPerReview),
     });
   }
 
   Future<void> addFavoriteRestroom(String restroomId) async {
     final user = _auth.currentUser;
     if (user == null) return;
-
     await _userCollection.doc(user.uid).update({
       'favoriteRestrooms': FieldValue.arrayUnion([restroomId]),
     });
@@ -214,10 +232,8 @@ class UserService {
   Future<void> removeFavoriteRestroom(String restroomId) async {
     final user = _auth.currentUser;
     if (user == null) return;
-
     await _userCollection.doc(user.uid).update({
       'favoriteRestrooms': FieldValue.arrayRemove([restroomId]),
     });
   }
-
 }
