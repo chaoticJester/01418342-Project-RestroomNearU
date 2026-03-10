@@ -170,10 +170,11 @@ class ReviewService {
     });
 
     if (reviewerId.isNotEmpty) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(reviewerId)
-          .update({'totalHelpful': FieldValue.increment(alreadyLiked ? -1 : 1)});
+      if (alreadyLiked) {
+        await UserService().decrementHelpfulCount(reviewerId);
+      } else {
+        await UserService().incrementHelpfulCount(reviewerId);
+      }
     }
   }
 
@@ -201,7 +202,7 @@ class ReviewService {
         'totalRatings': newTotal < 0 ? 0 : newTotal, 
       });
     });
-    await UserService().incrementReviewCount(reviewRef.id);
+    await UserService().decrementReviewCount(reviewRef.id);
   }
 
   String getRatingBadge(double rating) {
