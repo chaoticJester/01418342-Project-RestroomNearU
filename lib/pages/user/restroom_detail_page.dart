@@ -67,6 +67,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     _loadFavoriteState();
     _checkAdminStatus();
     _loadData();
+    _logSearchEvent();
     _enterCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -98,6 +99,21 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   Future<void> _checkAdminStatus() async {
     final isUserAdmin = await _userService.isAdmin();
     if (mounted) setState(() => isAdmin = isUserAdmin);
+  }
+
+  Future<void> _logSearchEvent() async {
+    try {
+      final address = widget.restroom.address;
+      final parts = address.split(',').map((s) => s.trim()).toList();
+      final area = parts.length > 1 ? parts[1] : parts.first;
+      if (area.isEmpty) return;
+      await FirebaseFirestore.instance.collection('search_logs').add({
+        'restroomId': widget.restroom.restroomId,
+        'restroomName': widget.restroom.restroomName,
+        'area': area,
+        'searchedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
   }
 
   void _loadData() async {

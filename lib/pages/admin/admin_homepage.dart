@@ -9,7 +9,7 @@ import 'package:restroom_near_u/pages/admin/admin_profile_page.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
 
 // ─────────────────────────────────────────────
-// Design tokens (ตรงกับทั้ง project)
+// Design tokens
 // ─────────────────────────────────────────────
 class _C {
   static const bg        = Color(0xFFFCF9EA);
@@ -232,38 +232,36 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   void _loadTrendingLocations() {
-    // Get restrooms grouped by location (first part of address)
+    final sevenDaysAgo = Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(days: 7)));
+
     _subs.add(
       FirebaseFirestore.instance
-          .collection('restrooms')
+          .collection('search_logs')
+          .where('searchedAt', isGreaterThanOrEqualTo: sevenDaysAgo)
           .snapshots()
           .listen((snap) {
-        final Map<String, int> locationCounts = {};
-        
+        final Map<String, int> areaCounts = {};
+        final total = snap.size;
+
         for (var doc in snap.docs) {
-          final data = doc.data();
-          final address = data['address'] ?? '';
-          
-          // Extract main location (first part before comma)
-          final location = address.split(',').first.trim();
-          if (location.isNotEmpty) {
-            locationCounts[location] = (locationCounts[location] ?? 0) + 1;
-          }
+          final area = (doc.data()['area'] ?? '').toString().trim();
+          if (area.isEmpty) continue;
+          areaCounts[area] = (areaCounts[area] ?? 0) + 1;
         }
-        
-        // Convert to list and sort by count
-        final locations = locationCounts.entries.map((e) {
+
+        final locations = areaCounts.entries.map((e) {
+          final pct = total > 0 ? (e.value / total * 100) : 0.0;
           return {
             'name': e.key,
             'searches': e.value,
-            'trend': (e.value * 0.1).round(), // Simple trend calculation
-            'up': true, // Always show as trending up for now
+            'percent': pct,
+            'up': pct >= 10.0, // green if >= 10% share
           };
-        }).toList();
-        
-        locations.sort((a, b) => 
-          (b['searches'] as int).compareTo(a['searches'] as int));
-        
+        }).toList()
+          ..sort((a, b) =>
+              (b['searches'] as int).compareTo(a['searches'] as int));
+
         if (mounted) {
           setState(() {
             _trendingLocations = locations.take(6).toList();
@@ -315,6 +313,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                     _buildRecentActivity(),
                     const SizedBox(height: 20),
                     _buildSectionTitle('Analytics', Icons.bar_chart_rounded),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Overview of top restrooms and trending areas',
+                      style: TextStyle(fontSize: 13, color: _C.textMid),
+                    ),
                     const SizedBox(height: 10),
                     _buildBottomPanels(),
                     const SizedBox(height: 32),
@@ -562,19 +565,18 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   // ── Bottom Panels ─────────────────────────────────────────────────────
   Widget _buildBottomPanels() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        Expanded(child: _buildMostReviewedPanel()),
-        const SizedBox(width: 12),
-        Expanded(child: _buildTrendingLocationsPanel()),
+        _buildMostReviewedPanel(),
+        const SizedBox(height: 16),
+        _buildTrendingLocationsPanel(),
       ],
     );
   }
 
   Widget _buildMostReviewedPanel() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _C.card,
         borderRadius: BorderRadius.circular(16),
@@ -591,31 +593,41 @@ class _AdminHomePageState extends State<AdminHomePage>
         children: [
           Row(
             children: [
-              Icon(Icons.chat_bubble_outline_rounded,
-                  size: 13, color: _C.tealDark),
-              const SizedBox(width: 5),
-              const Expanded(
-                child: Text(
-                  'Most Reviewed',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _C.textDark),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _C.teal.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: const Icon(Icons.chat_bubble_outline_rounded,
+                    size: 18, color: _C.tealDark),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Most Reviewed',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _C.textDark),
+                  ),
+                  Text('All time',
+                      style: TextStyle(fontSize: 12, color: _C.textLight)),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          const Text('All time',
-              style: TextStyle(fontSize: 9, color: _C.textLight)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           if (_topToilets.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
                   'No reviews yet',
-                  style: TextStyle(fontSize: 10, color: _C.textLight),
+                  style: TextStyle(fontSize: 14, color: _C.textLight),
                 ),
               ),
             )
@@ -628,7 +640,7 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   Widget _buildTrendingLocationsPanel() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _C.card,
         borderRadius: BorderRadius.circular(16),
@@ -645,30 +657,41 @@ class _AdminHomePageState extends State<AdminHomePage>
         children: [
           Row(
             children: [
-              Icon(Icons.trending_up_rounded, size: 13, color: _C.tealDark),
-              const SizedBox(width: 5),
-              const Expanded(
-                child: Text(
-                  'Trending Areas',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _C.textDark),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _C.teal.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: const Icon(Icons.trending_up_rounded,
+                    size: 18, color: _C.tealDark),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Trending Areas',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _C.textDark),
+                  ),
+                  Text('Most restrooms',
+                      style: TextStyle(fontSize: 12, color: _C.textLight)),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          const Text('Most restrooms',
-              style: TextStyle(fontSize: 9, color: _C.textLight)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           if (_trendingLocations.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
                   'No data yet',
-                  style: TextStyle(fontSize: 10, color: _C.textLight),
+                  style: TextStyle(fontSize: 14, color: _C.textLight),
                 ),
               ),
             )
@@ -879,15 +902,25 @@ class _TopToiletRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: _C.fieldFill,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: _C.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.wc_rounded, size: 20, color: _C.orange),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -895,23 +928,24 @@ class _TopToiletRow extends StatelessWidget {
                   Text(
                     toilet['name'] as String,
                     style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: _C.textDark),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     toilet['location'] as String,
                     style: const TextStyle(
-                        fontSize: 8, color: _C.textLight),
+                        fontSize: 12, color: _C.textLight),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -919,13 +953,13 @@ class _TopToiletRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.star_rounded,
-                        size: 9, color: _C.orange),
-                    const SizedBox(width: 2),
+                        size: 16, color: _C.orange),
+                    const SizedBox(width: 3),
                     Text(
-                      '${toilet['rating']}',
+                      (toilet['rating'] as double).toStringAsFixed(2),
                       style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
                           color: _C.textDark),
                     ),
                   ],
@@ -933,7 +967,7 @@ class _TopToiletRow extends StatelessWidget {
                 Text(
                   '${toilet['reviews']} reviews',
                   style: const TextStyle(
-                      fontSize: 7, color: _C.textLight),
+                      fontSize: 11, color: _C.textLight),
                 ),
               ],
             ),
@@ -960,18 +994,26 @@ class _TrendingRow extends StatelessWidget {
         : _C.red.withOpacity(0.12);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: _C.fieldFill,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            const Icon(Icons.location_on_rounded,
-                size: 11, color: _C.textLight),
-            const SizedBox(width: 5),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: _C.teal.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.location_on_rounded,
+                  size: 20, color: _C.tealDark),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,47 +1021,45 @@ class _TrendingRow extends StatelessWidget {
                   Text(
                     location['name'] as String,
                     style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: _C.textDark),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    '${location['searches']} restrooms',
+                    '${location['searches']} views this week',
                     style: const TextStyle(
-                        fontSize: 8, color: _C.textLight),
+                        fontSize: 12, color: _C.textLight),
                   ),
                 ],
               ),
             ),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-              decoration: BoxDecoration(
-                color: trendBg,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isUp
-                        ? Icons.arrow_upward_rounded
-                        : Icons.arrow_downward_rounded,
-                    size: 8,
-                    color: trendColor,
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: trendBg,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${location['trend']}',
-                    style: TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w800,
-                        color: trendColor),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${(location['percent'] as double).toStringAsFixed(1)}%',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: trendColor),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
