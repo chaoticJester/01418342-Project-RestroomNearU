@@ -179,8 +179,6 @@ class _WriteReviewPageState extends State<WriteReviewPage>
 
       await ReviewService().addReviewWithRatingUpdate(review);
 
-      await UserService().incrementReviewCount(tempId);
-
       if (!mounted) return;
       setState(() => isSubmitting = false);
 
