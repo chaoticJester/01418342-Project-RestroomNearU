@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import '/models/user_model.dart'; 
 
 class UserService {
@@ -72,12 +73,12 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print("Error fetching user: $e");
+      debugPrint("Error fetching user: $e"); // ✅ FIX #12: was print()
       return null;
     }
   }
 
-  /// ✅ RESTORED: Get user by email (needed for password reset check)
+  /// Get user by email (needed for password reset check)
   Future<UserModel?> getUserByEmail(String email) async {
     try {
       final snapshot = await _userCollection
@@ -89,7 +90,7 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print("Error fetching user by email: $e");
+      debugPrint("Error fetching user by email: $e"); // ✅ FIX #12: was print()
       return null;
     }
   }
@@ -135,7 +136,6 @@ class UserService {
     await user.delete();
   }
 
-  /// ✅ FIXED: Return download URL (needed for ProfileAvatarWidget)
   Future<String?> uploadProfilePhoto(File imageFile) async {
     final user = _auth.currentUser;
     if (user == null) return null;
@@ -155,12 +155,11 @@ class UserService {
       await user.updatePhotoURL(downloadUrl);
       return downloadUrl;
     } catch (e) {
-      print("Error uploading profile photo: $e");
+      debugPrint("Error uploading profile photo: $e"); // ✅ FIX #12: was print()
       return null;
     }
   }
 
-  /// ✅ RESTORED: Remove profile photo
   Future<void> removeProfilePhoto() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -176,10 +175,22 @@ class UserService {
     await user.updatePhotoURL(null);
   }
 
+  /// Increments totalAdded + points for the currently signed-in user.
+  /// Used when a user submits a new restroom request themselves.
   Future<void> incrementAddedCount() async {
     final user = _auth.currentUser;
     if (user == null) return;
     await _userCollection.doc(user.uid).update({
+      'totalAdded': FieldValue.increment(1),
+      'points': FieldValue.increment(pointsPerRestroomAdded),
+    });
+  }
+
+  /// ✅ FIX #7 & #8: Increments totalAdded + points for an ARBITRARY userId.
+  /// Used by admin approval flow so the submitter earns their points.
+  Future<void> incrementAddedCountForUser(String userId) async {
+    if (userId.isEmpty) return;
+    await _userCollection.doc(userId).update({
       'totalAdded': FieldValue.increment(1),
       'points': FieldValue.increment(pointsPerRestroomAdded),
     });
