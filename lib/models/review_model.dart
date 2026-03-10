@@ -106,7 +106,9 @@ class ReviewModel {
   // Helper to check if review was edited
   bool get isEdited => updatedAt.isAfter(createdAt.add(const Duration(seconds: 5)));
 
-  // Helper method to create a copy with updated fields
+  // Helper method to create a copy with updated fields.
+  // Use the sentinel [_clearSuspension] pattern isn't needed here, but for
+  // nullable list fields we always pass through to avoid accidental resets.
   ReviewModel copyWith({
     double? rating,
     double? cleanlinessRating,
@@ -118,14 +120,15 @@ class ReviewModel {
     List<String>? photos,
     int? totalLikes,
     int? helpfulCount,
+    List<String>? likedBy,   // ✅ FIX #1: was missing — omitting it silently wiped likes
     DateTime? updatedAt,
   }) {
     return ReviewModel(
-      reviewId: this.reviewId,
-      restroomId: this.restroomId,
-      reviewerId: this.reviewerId,
-      reviewerName: this.reviewerName,
-      reviewerPhotoUrl: this.reviewerPhotoUrl,
+      reviewId: reviewId,
+      restroomId: restroomId,
+      reviewerId: reviewerId,
+      reviewerName: reviewerName,
+      reviewerPhotoUrl: reviewerPhotoUrl,
       rating: rating ?? this.rating,
       cleanlinessRating: cleanlinessRating ?? this.cleanlinessRating,
       availabilityRating: availabilityRating ?? this.availabilityRating,
@@ -133,11 +136,12 @@ class ReviewModel {
       smellRating: smellRating ?? this.smellRating,
       amenitiesFound: amenitiesFound ?? this.amenitiesFound,
       comment: comment ?? this.comment,
-      timestamp: this.timestamp, // Keep original post time
-      createdAt: this.createdAt, // Never change
-      updatedAt: updatedAt ?? DateTime.now(), // Auto-update to now
+      timestamp: timestamp,       // Keep original post time
+      createdAt: createdAt,       // Never change
+      updatedAt: updatedAt ?? DateTime.now(),
       totalLikes: totalLikes ?? this.totalLikes,
       helpfulCount: helpfulCount ?? this.helpfulCount,
+      likedBy: likedBy ?? this.likedBy,   // ✅ preserve existing list
       photos: photos ?? this.photos,
     );
   }
