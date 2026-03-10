@@ -4,42 +4,31 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../models/restroom_model.dart';
 import '../../models/review_model.dart';
-import '../../models/user_model.dart';
 import '../../services/restroom_firestore.dart';
 import '../../services/review_firestore.dart';
+import '../../services/user_firestore.dart';
+import '../../utils/app_colors.dart';
+import '../../utils/app_ui.dart';
+import '../../services/location_service.dart';
+import '../../widgets/spring_button.dart';
+import '../../widgets/section_card.dart';
+import '../../widgets/chips.dart';
+import '../../widgets/rating_widgets.dart';
+import '../../widgets/photo_source_button.dart';
+import '../../widgets/review_card.dart';
 import 'photo_gallery_page.dart';
 import 'report_issue_page.dart';
 import 'write_review_page.dart';
 import 'navigation_page.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:geolocator/geolocator.dart';
-import '../../services/user_firestore.dart';
-
-// ─────────────────────────────────────────────
-// Design tokens - Figma inspired theme
-// ─────────────────────────────────────────────
-class _C {
-  static const bg        = Color(0xFFF5F1E8);  // Warm cream background
-  static const card      = Color(0xFFFFFDFA);  // Lighter card surface
-  static const pink      = Color(0xFFEC9B9B);  // Soft pink accent
-  static const pinkLight = Color(0xFFF5D4D4);  // Light pink for backgrounds
-  static const mint      = Color(0xFFA8D5D5);  // Mint/teal accent
-  static const mintDark  = Color(0xFF88B5B5);  // Darker mint
-  static const orange    = Color(0xFFF5A162);  // Warm orange
-  static const green     = Color(0xFF7CB87C);  // Soft green
-  static const red       = Color(0xFFD77A7A);  // Soft red
-  static const textDark  = Color(0xFF2C2C2C);  // Near black
-  static const textMid   = Color(0xFF6B6B6B);  // Medium gray
-  static const textLight = Color(0xFFA5A5A5);  // Light gray
-  static const divider   = Color(0xFFE8E4DB);  // Soft divider
-  static const fieldFill = Color(0xFFFFFBF5);  // Input field background
-}
 
 class RestroomDetailPage extends StatefulWidget {
   final RestroomModel restroom;
-  const RestroomDetailPage({Key? key, required this.restroom}) : super(key: key);
+  const RestroomDetailPage({Key? key, required this.restroom})
+      : super(key: key);
 
   @override
   State<RestroomDetailPage> createState() => _RestroomDetailPageState();
@@ -48,70 +37,42 @@ class RestroomDetailPage extends StatefulWidget {
 class _RestroomDetailPageState extends State<RestroomDetailPage>
     with SingleTickerProviderStateMixin {
   bool isFavorite = false;
-  bool isAdmin = false; // Added: Track if user is admin
+  bool isAdmin = false;
   final _userService = UserService();
   List<ReviewModel> reviews = [];
   Map<int, int> starDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
   bool isOpen = true;
-  String distance = "...";
+  String distance = '...';
   String selectedFilter = 'Recent';
   final Set<String> helpfulReviewIds = {};
   bool _isUploadingPhoto = false;
-
   late RestroomModel _restroom;
 
   late AnimationController _enterCtrl;
   late Animation<double> _fadeAnim;
 
-  final List<String> filterOptions = [
+  static const List<String> _filterOptions = [
     'Recent',
     'Highest Rating',
     'Lowest Rating',
     'Most Helpful',
   ];
 
+  // ── Lifecycle ─────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
     _restroom = widget.restroom;
     _loadFavoriteState();
-    _checkAdminStatus(); // Added: Check admin status
+    _checkAdminStatus();
     _loadData();
     _enterCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
     )..forward();
-    _fadeAnim = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
-  }
-
-  Future<void> _loadFavoriteState() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final user = await _userService.getUserById(uid);
-    if (user != null && mounted) {
-      setState(() {
-        isFavorite = user.favoriteRestrooms.contains(widget.restroom.restroomId);
-      });
-    }
-  }
-
-  // Added: Check if current user is an admin
-  Future<void> _checkAdminStatus() async {
-    final isUserAdmin = await _userService.isAdmin();
-    if (mounted) {
-      setState(() => isAdmin = isUserAdmin);
-    }
-  }
-
-  Future<void> _toggleFavorite() async {
-    HapticFeedback.mediumImpact();
-    final newVal = !isFavorite;
-    setState(() => isFavorite = newVal);
-    if (newVal) {
-      await _userService.addFavoriteRestroom(widget.restroom.restroomId);
-    } else {
-      await _userService.removeFavoriteRestroom(widget.restroom.restroomId);
-    }
+    _fadeAnim =
+        CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
   }
 
   @override
@@ -120,25 +81,36 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     super.dispose();
   }
 
+  // ── Data loading ──────────────────────────────────────────────
+
+  Future<void> _loadFavoriteState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = await _userService.getUserById(uid);
+    if (user != null && mounted) {
+      setState(() {
+        isFavorite =
+            user.favoriteRestrooms.contains(widget.restroom.restroomId);
+      });
+    }
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final isUserAdmin = await _userService.isAdmin();
+    if (mounted) setState(() => isAdmin = isUserAdmin);
+  }
+
   void _loadData() async {
     isOpen = RestroomService().checkIfOpen(widget.restroom);
 
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        )
-      );
-
-      double userLat = position.latitude;
-      double userLng = position.longitude;
-      if (mounted) {
-        setState(() {
-          distance = RestroomService().getDistance(userLat, userLng, widget.restroom.latitude, widget.restroom.longitude);
-        });
-      }
-    } catch (e) {
-      debugPrint("Error getting location: $e");
+    final position = await LocationService.getCurrentPosition();
+    if (position != null && mounted) {
+      setState(() {
+        distance = RestroomService().getDistance(
+          position.latitude, position.longitude,
+          widget.restroom.latitude, widget.restroom.longitude,
+        );
+      });
     }
 
     FirebaseFirestore.instance
@@ -149,12 +121,16 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       if (mounted && snap.exists) {
         setState(() {
           _restroom = RestroomModel.fromMap(
-              snap.data() as Map<String, dynamic>, snap.id);
+            snap.data() as Map<String, dynamic>,
+            snap.id,
+          );
         });
       }
     });
 
-    ReviewService().getReviewsByRestroomId(widget.restroom.restroomId).listen((data) {
+    ReviewService()
+        .getReviewsByRestroomId(widget.restroom.restroomId)
+        .listen((data) {
       if (mounted) {
         setState(() {
           reviews = data;
@@ -165,7 +141,22 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     });
   }
 
-  Map<int, int> _calculateStarDistribution(List<ReviewModel> currentReviews) {
+  // ── Business logic ────────────────────────────────────────────
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.mediumImpact();
+    final newVal = !isFavorite;
+    setState(() => isFavorite = newVal);
+    if (newVal) {
+      await _userService.addFavoriteRestroom(widget.restroom.restroomId);
+    } else {
+      await _userService
+          .removeFavoriteRestroom(widget.restroom.restroomId);
+    }
+  }
+
+  Map<int, int> _calculateStarDistribution(
+      List<ReviewModel> currentReviews) {
     final dist = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
     for (final r in currentReviews) {
       final star = r.rating.round().clamp(1, 5);
@@ -179,92 +170,56 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       selectedFilter = filter;
       switch (filter) {
         case 'Recent':
-          reviews.sort((a, b) => b.timestamp.compareTo(a.timestamp)); break;
+          reviews.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          break;
         case 'Highest Rating':
-          reviews.sort((a, b) => b.rating.compareTo(a.rating)); break;
+          reviews.sort((a, b) => b.rating.compareTo(a.rating));
+          break;
         case 'Lowest Rating':
-          reviews.sort((a, b) => a.rating.compareTo(b.rating)); break;
+          reviews.sort((a, b) => a.rating.compareTo(b.rating));
+          break;
         case 'Most Helpful':
-          reviews.sort((a, b) => b.helpfulCount.compareTo(a.helpfulCount)); break;
+          reviews
+              .sort((a, b) => b.helpfulCount.compareTo(a.helpfulCount));
+          break;
       }
     });
   }
 
-  void _openGallery({int index = 0}) {
-    if (_restroom.photos.isEmpty) return;
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => PhotoGalleryPage(
-        restroomId: _restroom.restroomId,
-        restroomName: _restroom.restroomName,
-        photos: _restroom.photos,
-        initialIndex: index,
-      ),
-    ));
-  }
-
-  void _openWriteReview() {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => WriteReviewPage(
-        restroomId: _restroom.restroomId,
-        restroomName: _restroom.restroomName,
-      ),
-    )).then((_) => _loadData());
-  }
-
-  void _showAddPhotoSheet() {
-    showModalBottomSheet(
+  Future<void> _handleDeleteReview(ReviewModel review) async {
+    final confirm = await showDialog<bool>(
       context: context,
-      backgroundColor: _C.bg,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: _C.divider,
-                    borderRadius: BorderRadius.circular(99))),
-            const SizedBox(height: 16),
-            const Text('Add Photo',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: _C.textDark)),
-            const SizedBox(height: 4),
-            const Text('Share a photo of this restroom',
-                style: TextStyle(fontSize: 12, color: _C.textMid)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _PhotoSourceButton(
-                  icon: Icons.camera_alt_rounded,
-                  label: 'Camera',
-                  color: _C.mint,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickAndUploadPhoto(ImageSource.camera);
-                  },
-                ),
-                _PhotoSourceButton(
-                  icon: Icons.photo_library_rounded,
-                  label: 'Gallery',
-                  color: _C.orange,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickAndUploadPhoto(ImageSource.gallery);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Review?'),
+        content: const Text(
+            'Are you sure you want to delete this review? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
+
+    if (confirm == true) {
+      try {
+        await ReviewService().deleteReview(review);
+        if (mounted) {
+          AppUI.showSnackBar(context, 'Review deleted successfully');
+        }
+      } catch (e) {
+        if (mounted) {
+          AppUI.showSnackBar(context, 'Failed to delete review: $e',
+              isError: true);
+        }
+      }
+    }
   }
 
   Future<void> _pickAndUploadPhoto(ImageSource source) async {
@@ -278,17 +233,16 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     if (picked == null) return;
 
     setState(() => _isUploadingPhoto = true);
-
     try {
       final file = File(picked.path);
-      final fileName = 'restrooms/${_restroom.restroomId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final storageRef = FirebaseStorage.instance.ref().child(fileName);
-
+      final fileName =
+          'restrooms/${_restroom.restroomId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storageRef =
+          FirebaseStorage.instance.ref().child(fileName);
       final uploadTask = await storageRef.putFile(
         file,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-
       final downloadUrl = await uploadTask.ref.getDownloadURL();
 
       await FirebaseFirestore.instance
@@ -300,75 +254,50 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       });
 
       if (mounted) {
-        setState(() {
-          _restroom.photos.add(downloadUrl);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(children: [
-              Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
-              SizedBox(width: 8),
-              Text('Photo uploaded successfully!'),
-            ]),
-            backgroundColor: _C.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        setState(() => _restroom.photos.add(downloadUrl));
+        AppUI.showSnackBar(context, 'Photo uploaded successfully!',
+            icon: Icons.check_circle_rounded);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(children: [
-              const Icon(Icons.error_rounded, color: Colors.white, size: 16),
-              const SizedBox(width: 8),
-              Expanded(child: Text('Upload failed: ${e.toString()}')),
-            ]),
-            backgroundColor: _C.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        AppUI.showSnackBar(context, 'Upload failed: ${e.toString()}',
+            isError: true, icon: Icons.error_rounded);
       }
     } finally {
       if (mounted) setState(() => _isUploadingPhoto = false);
     }
   }
 
-  Future<void> _handleDeleteReview(ReviewModel review) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Review?'),
-        content: const Text('Are you sure you want to delete this review? This cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+  // ── Navigation helpers ────────────────────────────────────────
+
+  void _openGallery({int index = 0}) {
+    if (_restroom.photos.isEmpty) return;
+    Navigator.push(
+      context,
+      AppUI.smoothRoute(
+        PhotoGalleryPage(
+          restroomId: _restroom.restroomId,
+          restroomName: _restroom.restroomName,
+          photos: _restroom.photos,
+          initialIndex: index,
+        ),
       ),
     );
-
-    if (confirm == true) {
-      try {
-        await ReviewService().deleteReview(review.reviewId, review.rating, review.restroomId);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Review deleted successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to delete review: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
-    }
   }
+
+  void _openWriteReview() {
+    Navigator.push(
+      context,
+      AppUI.smoothRoute(
+        WriteReviewPage(
+          restroomId: _restroom.restroomId,
+          restroomName: _restroom.restroomName,
+        ),
+      ),
+    ).then((_) => _loadData());
+  }
+
+  // ── Build ─────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -377,7 +306,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: _C.bg,
+        backgroundColor: AppColors.bg,
         body: FadeTransition(
           opacity: _fadeAnim,
           child: CustomScrollView(
@@ -385,13 +314,14 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             slivers: [
               SliverToBoxAdapter(child: _buildHeader()),
               SliverToBoxAdapter(child: _buildTitleBar()),
-              SliverToBoxAdapter(child: _buildInfoCards()),
+              SliverToBoxAdapter(child: _buildInfoCard()),
               SliverToBoxAdapter(child: _buildRatingBreakdownCard()),
               SliverToBoxAdapter(child: _buildCategoryRatingsCard()),
               SliverToBoxAdapter(child: _buildAmenitiesCard()),
               SliverToBoxAdapter(child: _buildPhotosCard()),
               SliverToBoxAdapter(child: _buildActionButtons()),
-              SliverToBoxAdapter(child: _buildReviewsSection(currentUserId)),
+              SliverToBoxAdapter(
+                  child: _buildReviewsSection(currentUserId)),
               const SliverToBoxAdapter(child: SizedBox(height: 40)),
             ],
           ),
@@ -399,6 +329,8 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       ),
     );
   }
+
+  // ── Section builders ──────────────────────────────────────────
 
   Widget _buildHeader() {
     return Stack(
@@ -408,43 +340,49 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           child: Container(
             height: 260,
             width: double.infinity,
-            color: _C.pinkLight.withOpacity(0.5),
+            color: AppColors.pinkLight.withOpacity(0.5),
             child: widget.restroom.photos.isNotEmpty
                 ? Image.network(
                     widget.restroom.photos.first,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.wc_rounded, size: 72, color: _C.pink),
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.wc_rounded,
+                      size: 72,
+                      color: AppColors.pink,
+                    ),
                   )
-                : const Icon(Icons.wc_rounded, size: 72, color: _C.pink),
+                : const Icon(
+                    Icons.wc_rounded,
+                    size: 72,
+                    color: AppColors.pink,
+                  ),
           ),
         ),
         Positioned(
-          bottom: 0, left: 0, right: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
           child: Container(
             height: 80,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
-                colors: [_C.bg, _C.bg.withOpacity(0)],
+                colors: [AppColors.bg, AppColors.bg.withOpacity(0)],
               ),
             ),
           ),
         ),
         Positioned(
-          top: 52, left: 12,
-          child: _CircleButton(
-            icon: Icons.arrow_back,
-            onTap: () { HapticFeedback.lightImpact(); Navigator.pop(context); },
-          ),
+          top: 52,
+          left: 12,
+          child: AppBackButton(),
         ),
         Positioned(
-          top: 52, right: 12,
+          top: 52,
+          right: 12,
           child: _FavouriteButton(
-            isFavorite: isFavorite,
-            onTap: _toggleFavorite,
-          ),
+              isFavorite: isFavorite, onTap: _toggleFavorite),
         ),
       ],
     );
@@ -453,107 +391,33 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   Widget _buildTitleBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _restroom.restroomName,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _C.textDark,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            _C.orange.withOpacity(0.22),
-                            _C.orange.withOpacity(0.1),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _C.orange.withOpacity(0.2),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.star_rounded, color: _C.orange, size: 14),
-                          const SizedBox(width: 3),
-                          Text(
-                            _restroom.avgRating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _C.orange,
-                            ),
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            '(${_restroom.totalRatings})',
-                            style: const TextStyle(fontSize: 11, color: _C.textMid),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            (isOpen ? _C.green : _C.red).withOpacity(0.22),
-                            (isOpen ? _C.green : _C.red).withOpacity(0.1),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (isOpen ? _C.green : _C.red).withOpacity(0.2),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        isOpen ? 'Open' : 'Closed',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: isOpen ? _C.green : _C.red,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+          Text(
+            _restroom.restroomName,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+              height: 1.2,
             ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              _RatingPill(rating: _restroom.avgRating,
+                  total: _restroom.totalRatings),
+              const SizedBox(width: 8),
+              StatusBadge(isOpen: isOpen),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoCards() {
+  Widget _buildInfoCard() {
     final hours = _restroom.is24hrs
         ? '24 Hours'
         : '${_restroom.openTime} – ${_restroom.closeTime}';
@@ -565,21 +429,34 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Details',
         icon: Icons.info_outline_rounded,
         child: Column(
           children: [
-            _InfoRow(icon: Icons.location_on_rounded, iconColor: _C.pink,
-                label: 'Location', value: widget.restroom.address, sub: distance),
-            const _Divider(),
-            _InfoRow(icon: Icons.access_time_rounded, iconColor: _C.mint,
-                label: 'Hours', value: hours,
-                sub: isOpen ? 'Currently Open' : 'Currently Closed',
-                subColor: isOpen ? _C.green : _C.red),
-            const _Divider(),
-            _InfoRow(icon: Icons.payments_rounded, iconColor: _C.orange,
-                label: 'Price', value: price),
+            _InfoRow(
+              icon: Icons.location_on_rounded,
+              iconColor: AppColors.pink,
+              label: 'Location',
+              value: widget.restroom.address,
+              sub: distance,
+            ),
+            const _RowDivider(),
+            _InfoRow(
+              icon: Icons.access_time_rounded,
+              iconColor: AppColors.mint,
+              label: 'Hours',
+              value: hours,
+              sub: isOpen ? 'Currently Open' : 'Currently Closed',
+              subColor: isOpen ? AppColors.green : AppColors.red,
+            ),
+            const _RowDivider(),
+            _InfoRow(
+              icon: Icons.payments_rounded,
+              iconColor: AppColors.orangeAlt,
+              label: 'Price',
+              value: price,
+            ),
           ],
         ),
       ),
@@ -587,152 +464,55 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   }
 
   Widget _buildRatingBreakdownCard() {
-    final total = reviews.length;
-    final avg   = _restroom.avgRating;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Rating Breakdown',
         icon: Icons.bar_chart_rounded,
-        child: total == 0
-            ? Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: Column(children: const [
-                    Icon(Icons.star_border_rounded, size: 32, color: _C.textLight),
-                    SizedBox(height: 6),
-                    Text('No ratings yet',
-                        style: TextStyle(fontSize: 12, color: _C.textLight)),
-                  ]),
-                ),
-              )
-            : Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        avg.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 44,
-                          fontWeight: FontWeight.w800,
-                          color: _C.textDark,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: List.generate(5, (i) {
-                          if (i < avg.floor()) {
-                            return const Icon(Icons.star_rounded, size: 14, color: _C.orange);
-                          } else if (i < avg && (avg - avg.floor()) >= 0.5) {
-                            return const Icon(Icons.star_half_rounded, size: 14, color: _C.orange);
-                          } else {
-                            return const Icon(Icons.star_outline_rounded, size: 14, color: _C.textLight);
-                          }
-                        }),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$total review${total == 1 ? '' : 's'}',
-                        style: const TextStyle(fontSize: 10, color: _C.textLight),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 16),
-                  Container(width: 1, height: 90, color: _C.divider),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      children: [5, 4, 3, 2, 1].map((star) {
-                        final count = starDistribution[star] ?? 0;
-                        final fraction = total > 0 ? count / total : 0.0;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
-                            children: [
-                              Text('$star',
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: _C.textMid)),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.star_rounded, size: 11, color: _C.orange),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(99),
-                                  child: LinearProgressIndicator(
-                                    value: fraction,
-                                    minHeight: 7,
-                                    backgroundColor: _C.divider,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      star >= 4 ? _C.mint
-                                          : star == 3 ? _C.orange
-                                          : _C.pink,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                width: 24,
-                                child: Text('$count',
-                                    textAlign: TextAlign.end,
-                                    style: const TextStyle(
-                                        fontSize: 10, color: _C.textLight)),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
+        child: RatingBreakdown(
+          avgRating: _restroom.avgRating,
+          totalReviews: reviews.length,
+          starDistribution: starDistribution,
+        ),
       ),
     );
   }
 
   Widget _buildCategoryRatingsCard() {
     if (_restroom.totalRatings == 0) return const SizedBox.shrink();
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Category Ratings',
         icon: Icons.category_rounded,
         child: Column(
           children: [
-            _CategoryRatingRow(
+            CategoryRatingRow(
               label: 'Cleanliness',
               score: _restroom.avgCleanliness,
               icon: Icons.cleaning_services_rounded,
-              color: _C.mint,
+              color: AppColors.mint,
             ),
             const SizedBox(height: 12),
-            _CategoryRatingRow(
+            CategoryRatingRow(
               label: 'Availability',
               score: _restroom.avgAvailability,
               icon: Icons.door_front_door_rounded,
-              color: _C.pink,
+              color: AppColors.pink,
             ),
             const SizedBox(height: 12),
-            _CategoryRatingRow(
+            CategoryRatingRow(
               label: 'Amenities',
               score: _restroom.avgAmenities,
               icon: Icons.chair_rounded,
-              color: _C.orange,
+              color: AppColors.orangeAlt,
             ),
             const SizedBox(height: 12),
-            _CategoryRatingRow(
+            CategoryRatingRow(
               label: 'Scent',
               score: _restroom.avgScent,
               icon: Icons.air_rounded,
-              color: _C.mintDark,
+              color: AppColors.mintDark,
             ),
           ],
         ),
@@ -744,7 +524,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     final amenities = _restroom.amenities.entries.toList();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Amenities',
         icon: Icons.check_circle_outline_rounded,
         child: Wrap(
@@ -752,24 +532,30 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           runSpacing: 8,
           children: amenities.map((e) {
             final available = e.value;
-            final name = e.key.replaceAllMapped(
-              RegExp(r'([A-Z])'), (m) => ' ${m.group(0)}').trim();
+            final name = e.key
+                .replaceAllMapped(
+                    RegExp(r'([A-Z])'), (m) => ' ${m.group(0)}')
+                .trim();
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 gradient: available
                     ? LinearGradient(
-                        colors: [_C.pinkLight, _C.pink.withOpacity(0.15)],
+                        colors: [
+                          AppColors.pinkLight,
+                          AppColors.pink.withOpacity(0.15),
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       )
                     : null,
-                color: available ? null : _C.fieldFill,
+                color: available ? null : AppColors.fieldFill,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: available
                     ? [
                         BoxShadow(
-                          color: _C.pink.withOpacity(0.15),
+                          color: AppColors.pink.withOpacity(0.15),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -780,9 +566,13 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    available ? Icons.check_rounded : Icons.close_rounded,
+                    available
+                        ? Icons.check_rounded
+                        : Icons.close_rounded,
                     size: 12,
-                    color: available ? _C.pink : _C.textLight,
+                    color: available
+                        ? AppColors.pink
+                        : AppColors.textLight,
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -790,7 +580,9 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: available ? _C.textDark : _C.textLight,
+                      color: available
+                          ? AppColors.textDark
+                          : AppColors.textLight,
                     ),
                   ),
                 ],
@@ -806,16 +598,20 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     final photos = _restroom.photos;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Photos (${photos.length})',
         icon: Icons.photo_library_rounded,
         trailing: GestureDetector(
           onTap: _openGallery,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [_C.mint.withOpacity(0.22), _C.mint.withOpacity(0.08)],
+                colors: [
+                  AppColors.mint.withOpacity(0.22),
+                  AppColors.mint.withOpacity(0.08),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -824,23 +620,29 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             child: const Text(
               'View All',
               style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _C.mint),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.mint,
+              ),
             ),
           ),
         ),
         child: photos.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(
-                  child: Column(children: const [
-                    Icon(Icons.add_photo_alternate_rounded,
-                        size: 36, color: _C.textLight),
-                    SizedBox(height: 6),
-                    Text('No photos yet',
-                        style: TextStyle(fontSize: 12, color: _C.textLight)),
-                  ]),
+                  child: Column(
+                    children: [
+                      Icon(Icons.add_photo_alternate_rounded,
+                          size: 36, color: AppColors.textLight),
+                      SizedBox(height: 6),
+                      Text(
+                        'No photos yet',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textLight),
+                      ),
+                    ],
+                  ),
                 ),
               )
             : GridView.builder(
@@ -858,24 +660,37 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                   onTap: () => _openGallery(index: i),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Stack(fit: StackFit.expand, children: [
-                      Container(color: _C.pinkLight.withOpacity(0.4),
-                          child: const Icon(Icons.photo, color: _C.pink)),
-                      if (i < photos.length)
-                        Image.network(photos[i], fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const SizedBox()),
-                      if (i == 5 && photos.length > 6)
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                         Container(
-                          color: Colors.black54,
-                          child: Center(
-                            child: Text('+${photos.length - 6}',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800)),
-                          ),
+                          color: AppColors.pinkLight.withOpacity(0.4),
+                          child: const Icon(Icons.photo,
+                              color: AppColors.pink),
                         ),
-                    ]),
+                        if (i < photos.length)
+                          Image.network(
+                            photos[i],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox(),
+                          ),
+                        if (i == 5 && photos.length > 6)
+                          Container(
+                            color: Colors.black54,
+                            child: Center(
+                              child: Text(
+                                '+${photos.length - 6}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -891,14 +706,12 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           _ActionBtn(
             icon: Icons.navigation_rounded,
             label: 'Direction',
-            color: _C.mint,
+            color: AppColors.mint,
             onTap: () {
               HapticFeedback.mediumImpact();
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => NavigationPage(restroom: _restroom),
-                ),
+                AppUI.smoothRoute(NavigationPage(restroom: _restroom)),
               );
             },
           ),
@@ -906,27 +719,40 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
           _ActionBtn(
             icon: Icons.rate_review_rounded,
             label: 'Review',
-            color: _C.pink,
+            color: AppColors.pink,
             onTap: _openWriteReview,
           ),
           const SizedBox(width: 10),
           _ActionBtn(
-            icon: _isUploadingPhoto ? Icons.hourglass_top_rounded : Icons.add_a_photo_rounded,
+            icon: _isUploadingPhoto
+                ? Icons.hourglass_top_rounded
+                : Icons.add_a_photo_rounded,
             label: _isUploadingPhoto ? 'Uploading...' : 'Add Photo',
-            color: _C.orange,
-            onTap: _isUploadingPhoto ? () {} : _showAddPhotoSheet,
+            color: AppColors.orangeAlt,
+            onTap: _isUploadingPhoto
+                ? () {}
+                : () => showPhotoSourceSheet(
+                      context,
+                      onCamera: () =>
+                          _pickAndUploadPhoto(ImageSource.camera),
+                      onGallery: () =>
+                          _pickAndUploadPhoto(ImageSource.gallery),
+                    ),
           ),
           const SizedBox(width: 10),
           _ActionBtn(
             icon: Icons.flag_rounded,
             label: 'Report',
-            color: _C.red,
-            onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => ReportIssuePage(
-                restroomId: _restroom.restroomId,
-                restroomName: _restroom.restroomName,
+            color: AppColors.red,
+            onTap: () => Navigator.push(
+              context,
+              AppUI.smoothRoute(
+                ReportIssuePage(
+                  restroomId: _restroom.restroomId,
+                  restroomName: _restroom.restroomName,
+                ),
               ),
-            )),
+            ),
           ),
         ],
       ),
@@ -936,33 +762,37 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   Widget _buildReviewsSection(String? currentUserId) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-      child: _SectionCard(
+      child: SectionCard(
         title: 'Reviews (${_restroom.totalRatings})',
         icon: Icons.chat_bubble_outline_rounded,
         trailing: GestureDetector(
           onTap: _openWriteReview,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_C.mint, _C.mintDark],
+              gradient: const LinearGradient(
+                colors: [AppColors.mint, AppColors.mintDark],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: _C.mint.withOpacity(0.4),
+                  color: AppColors.mint.withOpacity(0.4),
                   blurRadius: 8,
                   offset: const Offset(0, 3),
                 ),
               ],
             ),
-            child: const Text('Add Review',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white)),
+            child: const Text(
+              'Add Review',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
         child: Column(
@@ -971,10 +801,10 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
             GestureDetector(
               onTap: _showSortSheet,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _C.fieldFill,
+                  color: AppColors.fieldFill,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
@@ -988,104 +818,128 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.sort_rounded,
-                        size: 15, color: _C.mint),
+                        size: 15, color: AppColors.mint),
                     const SizedBox(width: 6),
-                    Text(selectedFilter,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _C.textDark)),
+                    Text(
+                      selectedFilter,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
                     const SizedBox(width: 4),
                     const Icon(Icons.keyboard_arrow_down_rounded,
-                        size: 16, color: _C.textMid),
+                        size: 16, color: AppColors.textMid),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            ...reviews.map((r) => _ReviewCard(
-                  review: r,
-                  isOwnerOrAdmin: currentUserId == r.reviewerId || isAdmin, // UPDATED: check if admin
-                  isHelpful: helpfulReviewIds.contains(r.reviewId),
-                  onHelpfulTap: () => setState(() {
-                    if (helpfulReviewIds.contains(r.reviewId)) {
-                      helpfulReviewIds.remove(r.reviewId);
-                    } else {
-                      helpfulReviewIds.add(r.reviewId);
-                      HapticFeedback.lightImpact();
-                    }
-                  }),
-                  onDeleteTap: () => _handleDeleteReview(r),
-                  onReadMore: () => _showFullReview(r),
-                )),
+            ...reviews.map(
+              (r) => ReviewCard(
+                review: r,
+                isOwnerOrAdmin:
+                    currentUserId == r.reviewerId || isAdmin,
+                isHelpful: helpfulReviewIds.contains(r.reviewId),
+                onHelpfulTap: () => setState(() {
+                  if (helpfulReviewIds.contains(r.reviewId)) {
+                    helpfulReviewIds.remove(r.reviewId);
+                  } else {
+                    helpfulReviewIds.add(r.reviewId);
+                    HapticFeedback.lightImpact();
+                  }
+                }),
+                onDeleteTap: () => _handleDeleteReview(r),
+                onReadMore: () => _showFullReview(r),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  // ── Bottom sheets & dialogs ───────────────────────────────────
+
   void _showSortSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: _C.bg,
+      backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
             Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: _C.divider,
-                    borderRadius: BorderRadius.circular(99))),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
             const SizedBox(height: 16),
-            const Text('Sort Reviews',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: _C.textDark)),
+            const Text(
+              'Sort Reviews',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+              ),
+            ),
             const SizedBox(height: 12),
-            ...filterOptions.map((opt) {
+            ..._filterOptions.map((opt) {
               final sel = selectedFilter == opt;
               return ListTile(
                 leading: Container(
-                  width: 34, height: 34,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     gradient: sel
                         ? LinearGradient(
-                            colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
+                            colors: [
+                              AppColors.pinkLight,
+                              AppColors.pink.withOpacity(0.2),
+                            ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           )
                         : null,
-                    color: sel ? null : _C.fieldFill,
+                    color: sel ? null : AppColors.fieldFill,
                     borderRadius: BorderRadius.circular(10),
                     boxShadow: sel
                         ? [
                             BoxShadow(
-                              color: _C.pink.withOpacity(0.18),
+                              color: AppColors.pink.withOpacity(0.18),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
                           ]
                         : null,
                   ),
-                  child: Icon(Icons.sort_rounded,
-                      size: 16,
-                      color: sel ? _C.pink : _C.textLight),
+                  child: Icon(
+                    Icons.sort_rounded,
+                    size: 16,
+                    color: sel ? AppColors.pink : AppColors.textLight,
+                  ),
                 ),
-                title: Text(opt,
-                    style: TextStyle(
-                        fontWeight: sel
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: sel ? _C.pink : _C.textDark,
-                        fontSize: 14)),
+                title: Text(
+                  opt,
+                  style: TextStyle(
+                    fontWeight:
+                        sel ? FontWeight.w700 : FontWeight.w500,
+                    color:
+                        sel ? AppColors.pink : AppColors.textDark,
+                    fontSize: 14,
+                  ),
+                ),
                 trailing: sel
                     ? const Icon(Icons.check_rounded,
-                        color: _C.pink, size: 18)
+                        color: AppColors.pink, size: 18)
                     : null,
                 onTap: () {
                   _sortReviews(opt);
@@ -1104,87 +958,68 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: _C.bg,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(review.reviewerName,
-            style: const TextStyle(
-                fontWeight: FontWeight.w800, color: _C.textDark)),
+        backgroundColor: AppColors.bg,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          review.reviewerName,
+          style: const TextStyle(
+              fontWeight: FontWeight.w800, color: AppColors.textDark),
+        ),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
+              Row(
+                children: [
+                  _RatingPill(rating: review.rating),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          _C.orange.withOpacity(0.22),
-                          _C.orange.withOpacity(0.1),
+                          AppColors.pinkLight,
+                          AppColors.pink.withOpacity(0.2),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _C.orange.withOpacity(0.18),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.star_rounded,
-                        color: _C.orange, size: 14),
-                    const SizedBox(width: 3),
-                    Text(review.rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _C.orange)),
-                  ]),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _C.pink.withOpacity(0.15),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]),
-                  child: Text(ReviewService().getRatingBadge(review.rating),
+                    ),
+                    child: Text(
+                      ReviewService().getRatingBadge(review.rating),
                       style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _C.pink)),
-                ),
-              ]),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.pink,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
-              Text(review.comment,
-                  style: const TextStyle(
-                      fontSize: 14, color: _C.textMid, height: 1.5)),
+              Text(
+                review.comment,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textMid,
+                  height: 1.5,
+                ),
+              ),
             ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(
-                    color: _C.mint, fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Close',
+              style: TextStyle(
+                  color: AppColors.mint, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1192,130 +1027,57 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
   }
 }
 
-class _CategoryRatingRow extends StatelessWidget {
-  final String label;
-  final double score;
-  final IconData icon;
-  final Color color;
+// ─── Local private widgets (page-specific, not worth sharing) ────────────────
 
-  const _CategoryRatingRow({
-    required this.label,
-    required this.score,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 30, height: 30,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, size: 15, color: color),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _C.textDark,
-                ),
-              ),
-            ),
-            Text(
-              score.toStringAsFixed(1),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-            const Text('/5.0', style: TextStyle(fontSize: 10, color: _C.textLight)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: LinearProgressIndicator(
-            value: score / 5.0,
-            minHeight: 6,
-            backgroundColor: _C.divider.withOpacity(0.5),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Widget child;
-  final Widget? trailing;
-
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-    this.trailing,
-  });
+class _RatingPill extends StatelessWidget {
+  final double rating;
+  final int? total;
+  const _RatingPill({required this.rating, this.total});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: _C.card,
-        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.orangeAlt.withOpacity(0.22),
+            AppColors.orangeAlt.withOpacity(0.1),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 4)),
+            color: AppColors.orangeAlt.withOpacity(0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 32, height: 32,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_C.pinkLight, _C.pink.withOpacity(0.25)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, size: 16, color: _C.pink),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(title,
-                      style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: _C.textDark)),
-                ),
-                if (trailing != null) trailing!,
-              ],
+          const Icon(Icons.star_rounded,
+              color: AppColors.orangeAlt, size: 14),
+          const SizedBox(width: 3),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.orangeAlt,
             ),
           ),
-          Divider(color: _C.divider, height: 1, thickness: 1),
-          Padding(padding: const EdgeInsets.all(14), child: child),
+          if (total != null) ...[
+            const SizedBox(width: 3),
+            Text(
+              '($total)',
+              style: const TextStyle(
+                  fontSize: 11, color: AppColors.textMid),
+            ),
+          ],
         ],
       ),
     );
@@ -1347,7 +1109,8 @@ class _InfoRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 34, height: 34,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               color: iconColor.withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
@@ -1359,23 +1122,32 @@ class _InfoRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: _C.textLight,
-                        fontWeight: FontWeight.w500)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textLight,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 1),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: _C.textDark)),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
                 if (sub != null)
-                  Text(sub!,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: subColor ?? _C.textMid)),
+                  Text(
+                    sub!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: subColor ?? AppColors.textMid,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1385,11 +1157,11 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _Divider extends StatelessWidget {
-  const _Divider();
+class _RowDivider extends StatelessWidget {
+  const _RowDivider();
   @override
   Widget build(BuildContext context) =>
-      Divider(color: _C.divider, height: 1, thickness: 1);
+      Divider(color: AppColors.divider, height: 1, thickness: 1);
 }
 
 class _ActionBtn extends StatefulWidget {
@@ -1417,22 +1189,29 @@ class _ActionBtnState extends State<_ActionBtn>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 80),
-        reverseDuration: const Duration(milliseconds: 200));
-    _scale = Tween(begin: 1.0, end: 0.92)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scale = Tween(begin: 1.0, end: 0.92).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: GestureDetector(
         onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
+        onTapUp: (_) {
+          _ctrl.reverse();
+          widget.onTap();
+        },
         onTapCancel: () => _ctrl.reverse(),
         child: AnimatedBuilder(
           animation: _scale,
@@ -1462,274 +1241,17 @@ class _ActionBtnState extends State<_ActionBtn>
               children: [
                 Icon(widget.icon, size: 22, color: widget.color),
                 const SizedBox(height: 6),
-                Text(widget.label,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: widget.color)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewCard extends StatelessWidget {
-  final ReviewModel review;
-  final bool isOwnerOrAdmin; // Renamed
-  final bool isHelpful;
-  final VoidCallback onHelpfulTap;
-  final VoidCallback onDeleteTap;
-  final VoidCallback onReadMore;
-
-  const _ReviewCard({
-    required this.review,
-    required this.isOwnerOrAdmin, // Renamed
-    required this.isHelpful,
-    required this.onHelpfulTap,
-    required this.onDeleteTap,
-    required this.onReadMore,
-  });
-
-  String _timeAgo(DateTime d) {
-    final diff = DateTime.now().difference(d);
-    if (diff.inDays >= 1) return '${diff.inDays}d ago';
-    if (diff.inHours >= 1) return '${diff.inHours}h ago';
-    return '${diff.inMinutes}m ago';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _C.fieldFill,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38, height: 38,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [_C.pinkLight, _C.pink.withOpacity(0.3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.person_rounded,
-                    size: 20, color: _C.pink),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(review.reviewerName,
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _C.textDark)),
-                    Text(_timeAgo(review.timestamp),
-                        style: const TextStyle(
-                            fontSize: 10, color: _C.textLight)),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _C.orange.withOpacity(0.18),
-                      _C.orange.withOpacity(0.08),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.star_rounded,
-                      color: _C.orange, size: 12),
-                  const SizedBox(width: 2),
-                  Text(review.rating.toStringAsFixed(1),
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: _C.orange)),
-                ]),
-              ),
-              if (isOwnerOrAdmin) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: onDeleteTap,
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(ReviewService().getRatingBadge(review.rating),
-                style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: _C.pink)),
-          ),
-          const SizedBox(height: 8),
-          Text(review.comment,
-              style: const TextStyle(
-                  fontSize: 12, color: _C.textMid, height: 1.5),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: onHelpfulTap,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: isHelpful
-                        ? LinearGradient(
-                            colors: [_C.pinkLight, _C.pink.withOpacity(0.2)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : null,
-                    color: isHelpful ? null : _C.divider.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(
-                      isHelpful
-                          ? Icons.thumb_up_rounded
-                          : Icons.thumb_up_outlined,
-                      size: 12,
-                      color: isHelpful ? _C.pink : _C.textLight,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Helpful (${review.helpfulCount + (isHelpful ? 1 : 0)})',
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: isHelpful ? _C.pink : _C.textLight),
-                    ),
-                  ]),
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: onReadMore,
-                child: const Text('Read more',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _C.mint,
-                        decoration: TextDecoration.underline,
-                        decorationColor: _C.mint)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PhotoSourceButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _PhotoSourceButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 130,
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color.withOpacity(0.18), color.withOpacity(0.08)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.15),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52, height: 52,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [color.withOpacity(0.25), color.withOpacity(0.12)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(icon, size: 26, color: color),
-            ),
-            const SizedBox(height: 10),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 13,
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: color)),
-          ],
+                    color: widget.color,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1739,7 +1261,8 @@ class _PhotoSourceButton extends StatelessWidget {
 class _FavouriteButton extends StatefulWidget {
   final bool isFavorite;
   final Future<void> Function() onTap;
-  const _FavouriteButton({required this.isFavorite, required this.onTap});
+  const _FavouriteButton(
+      {required this.isFavorite, required this.onTap});
 
   @override
   State<_FavouriteButton> createState() => _FavouriteButtonState();
@@ -1759,19 +1282,31 @@ class _FavouriteButtonState extends State<_FavouriteButton>
       duration: const Duration(milliseconds: 400),
     );
     _scaleAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35)
-          .chain(CurveTween(curve: Curves.easeOut)), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.90)
-          .chain(CurveTween(curve: Curves.easeIn)), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.90, end: 1.0)
-          .chain(CurveTween(curve: Curves.elasticOut)), weight: 30),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.35)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.35, end: 0.90)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.90, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 30,
+      ),
     ]).animate(_ctrl);
     _burstAnim = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   void _handleTap() {
     widget.onTap();
@@ -1784,119 +1319,63 @@ class _FavouriteButtonState extends State<_FavouriteButton>
       onTap: _handleTap,
       child: AnimatedBuilder(
         animation: _ctrl,
-        builder: (_, __) {
-          return SizedBox(
-            width: 56, height: 56,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (_ctrl.isAnimating)
-                  Opacity(
-                    opacity: (1 - _burstAnim.value).clamp(0.0, 1.0),
-                    child: Transform.scale(
-                      scale: 0.6 + _burstAnim.value * 0.8,
-                      child: Container(
-                        width: 56, height: 56,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: widget.isFavorite
-                                ? _C.red.withOpacity(0.5)
-                                : _C.textLight.withOpacity(0.3),
-                            width: 2,
-                          ),
+        builder: (_, __) => SizedBox(
+          width: 56,
+          height: 56,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_ctrl.isAnimating)
+                Opacity(
+                  opacity: (1 - _burstAnim.value).clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 0.6 + _burstAnim.value * 0.8,
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: widget.isFavorite
+                              ? AppColors.red.withOpacity(0.5)
+                              : AppColors.textLight.withOpacity(0.3),
+                          width: 2,
                         ),
                       ),
                     ),
                   ),
-                Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: widget.isFavorite
-                        ? _C.red.withOpacity(0.12)
-                        : Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
                 ),
-                Transform.scale(
-                  scale: _scaleAnim.value,
-                  child: Icon(
-                    widget.isFavorite
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    size: 24,
-                    color: widget.isFavorite ? _C.red : _C.textDark,
-                  ),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: widget.isFavorite
+                      ? AppColors.red.withOpacity(0.12)
+                      : Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.18),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _CircleButton extends StatefulWidget {
-  final IconData icon;
-  final Color? iconColor;
-  final VoidCallback onTap;
-  const _CircleButton({required this.icon, required this.onTap, this.iconColor});
-
-  @override
-  State<_CircleButton> createState() => _CircleButtonState();
-}
-
-class _CircleButtonState extends State<_CircleButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 80),
-        reverseDuration: const Duration(milliseconds: 220));
-    _scale = Tween(begin: 1.0, end: 0.88)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scale,
-        builder: (_, child) =>
-            Transform.scale(scale: _scale.value, child: child),
-        child: Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2)),
+              ),
+              Transform.scale(
+                scale: _scaleAnim.value,
+                child: Icon(
+                  widget.isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  size: 24,
+                  color: widget.isFavorite
+                      ? AppColors.red
+                      : AppColors.textDark,
+                ),
+              ),
             ],
           ),
-          child: Icon(widget.icon,
-              size: 22, color: widget.iconColor ?? _C.textDark),
         ),
       ),
     );

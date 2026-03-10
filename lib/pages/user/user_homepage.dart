@@ -7,28 +7,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/restroom_model.dart';
 import '../../services/restroom_firestore.dart';
 import '../../services/user_firestore.dart';
+import '../../services/location_service.dart';
+import '../../utils/app_ui.dart';
+import '../../widgets/chips.dart';
+import '../../widgets/spring_button.dart';
 import 'restroom_detail_page.dart';
 import 'navigation_page.dart';
-import 'package:geolocator/geolocator.dart';
 
-// ─────────────────────────────────────────────
-// Design tokens
-// ─────────────────────────────────────────────/
-class _C {
-  static const bg         = Color(0xFFFCF9EA);
-  static const sheet      = Color(0xFFFAF7E8);
-  static const teal       = Color(0xFFBADFDB);
-  static const tealDark   = Color(0xFF7BBFBA);
-  static const orange     = Color(0xFFE8753D);
-  static const textDark   = Color(0xFF1C1B1F);
-  static const textMid    = Color(0xFF6B6874);
-  static const textLight  = Color(0xFFAEABB8);
-  static const openGreen  = Color(0xFF34A853);
-  static const closeRed   = Color(0xFFE53935);
-  static const divider    = Color(0xFFECE9DA);
-  static const pill       = Color(0xFFD8D4C4);
-  static const searchFill = Color(0xFFEEEBDA);
-}
+import '../../utils/app_colors.dart';
+// _C is aliased to AppColors — all _C.xxx references resolve to AppColors
+typedef _C = AppColors;
 
 // ─────────────────────────────────────────────
 // Marker size tiers — maps zoom → logical dp card size
@@ -235,36 +223,28 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   Future<void> _checkLocationPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-    if (permission == LocationPermission.deniedForever) return;
-
-    if (mounted) {
+    final hasPermission = await LocationService.hasPermission();
+    if (hasPermission && mounted) {
       setState(() => _myLocationEnabled = true);
-      _goToCurrentLocation(); 
+      _goToCurrentLocation();
+    } else {
+      // Try requesting — getCurrentPosition handles the full flow
+      final position = await LocationService.getCurrentPosition();
+      if (position != null && mounted) {
+        setState(() => _myLocationEnabled = true);
+        final ctrl = await _mapCompleter.future;
+        ctrl.animateCamera(CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude), 16.5));
+      }
     }
   }
 
   Future<void> _goToCurrentLocation() async {
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high)
-      );
-
-      final GoogleMapController controller = await _mapCompleter.future;
-      controller.animateCamera(CameraUpdate.newLatLngZoom(
-        LatLng(position.latitude, position.longitude),
-        16.5,
-      ));
-    } catch (e) {
-      debugPrint("Error locating user: $e");
-    }
+    final position = await LocationService.getCurrentPosition();
+    if (position == null) return;
+    final ctrl = await _mapCompleter.future;
+    ctrl.animateCamera(CameraUpdate.newLatLngZoom(
+      LatLng(position.latitude, position.longitude), 16.5));
   }
 
   @override
@@ -539,14 +519,14 @@ class _UserHomePageState extends State<UserHomePage>
                   _dismissPopup();
                   Navigator.push(
                     context,
-                    _smoothRoute(RestroomDetailPage(restroom: _selectedRestroom!)),
+                    AppUI.smoothRoute(RestroomDetailPage(restroom: _selectedRestroom!)),
                   );
                 },
                 onGoNav: () {
                   _dismissPopup();
                   Navigator.push(
-                    context,
-                    _smoothRoute(NavigationPage(restroom: _selectedRestroom!)),
+                  context,
+                  AppUI.smoothRoute(NavigationPage(restroom: _selectedRestroom!)),
                   );
                 },
               ),
@@ -696,19 +676,19 @@ class _MarkerPopup extends StatelessWidget {
                               ]),
                               const SizedBox(height: 8),
                               Row(children: [
-                                _MiniChip(
+                                MiniChip(
                                     icon: Icons.star_rounded,
                                     iconColor: _C.orange,
                                     label: restroom.avgRating.toStringAsFixed(1)),
                                 const SizedBox(width: 6),
-                                _MiniChip(
+                                MiniChip(
                                     icon: restroom.isFree
                                         ? Icons.money_off_rounded
                                         : Icons.paid_rounded,
                                     iconColor: _C.tealDark,
                                     label: restroom.isFree ? 'Free' : 'Paid'),
                                 const SizedBox(width: 6),
-                                _StatusBadge(isOpen: isOpen),
+                                StatusBadge(isOpen: isOpen),
                               ]),
                             ],
                           ),
@@ -1066,7 +1046,7 @@ class _RestroomCardState extends State<_RestroomCard>
       onTapCancel: () => _pressCtrl.reverse(),
       onTap: () {
         HapticFeedback.selectionClick();
-        Navigator.push(context, _smoothRoute(RestroomDetailPage(restroom: r)));
+        Navigator.push(context, AppUI.smoothRoute(RestroomDetailPage(restroom: r)));
       },
       child: AnimatedBuilder(
         animation: _scaleAnim,
@@ -1104,19 +1084,19 @@ class _RestroomCardState extends State<_RestroomCard>
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 7),
                 Row(children: [
-                  _MiniChip(
+                  MiniChip(
                       icon: Icons.star_rounded,
                       iconColor: _C.orange,
                       label: r.avgRating.toStringAsFixed(1)),
                   const SizedBox(width: 6),
-                  _MiniChip(
+                  MiniChip(
                       icon: r.isFree
                           ? Icons.money_off_rounded
                           : Icons.paid_rounded,
                       iconColor: _C.tealDark,
                       label: r.isFree ? 'Free' : 'Paid'),
                   const Spacer(),
-                  _StatusBadge(isOpen: isOpen),
+                  StatusBadge(isOpen: isOpen),
                 ]),
               ]),
             ),
@@ -1149,7 +1129,7 @@ class _RestroomCardState extends State<_RestroomCard>
                 HapticFeedback.mediumImpact();
                 Navigator.push(
                   context,
-                  _smoothRoute(NavigationPage(restroom: r)),
+                  AppUI.smoothRoute(NavigationPage(restroom: r)),
                 );
               },
               child: Container(
@@ -1367,195 +1347,74 @@ class _FilterTabBarState extends State<_FilterTabBar>
   }
 }
 
-class _MiniChip extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String label;
-  const _MiniChip({required this.icon, required this.iconColor, required this.label});
+// MiniChip and StatusBadge are now in widgets/app_chips.dart
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-          color: _C.searchFill, borderRadius: BorderRadius.circular(8)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: iconColor, size: 12),
-        const SizedBox(width: 3),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w600, color: _C.textDark)),
-      ]),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final bool isOpen;
-  const _StatusBadge({required this.isOpen});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: (isOpen ? _C.openGreen : _C.closeRed).withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(isOpen ? 'Open' : 'Closed',
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: isOpen ? _C.openGreen : _C.closeRed)),
-    );
-  }
-}
-
-class _CircleIconButton extends StatefulWidget {
+// _CircleIconButton — now uses SpringButton from widgets/spring_button.dart
+class _CircleIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   const _CircleIconButton({required this.icon, required this.onTap});
 
   @override
-  State<_CircleIconButton> createState() => _CircleIconButtonState();
-}
-
-class _CircleIconButtonState extends State<_CircleIconButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 220),
-    );
-    _scaleAnim = Tween(begin: 1.0, end: 0.88)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scaleAnim,
-        builder: (context, child) =>
-            Transform.scale(scale: _scaleAnim.value, child: child),
-        child: Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.85),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 10, offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Icon(widget.icon, size: 20, color: _C.textDark),
+    return SpringButton(
+      scaleFactor: 0.88,
+      onTap: onTap,
+      child: Container(
+        width: 42, height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.85),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.10),
+              blurRadius: 10, offset: const Offset(0, 3),
+            ),
+          ],
         ),
+        child: Icon(icon, size: 20, color: AppColors.textDarkAlt),
       ),
     );
   }
 }
 
-class _PillButton extends StatefulWidget {
+// _PillButton — now uses SpringButton from widgets/spring_button.dart
+class _PillButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   const _PillButton({required this.label, required this.icon, required this.onTap});
 
   @override
-  State<_PillButton> createState() => _PillButtonState();
-}
-
-class _PillButtonState extends State<_PillButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 220),
-    );
-    _scaleAnim = Tween(begin: 1.0, end: 0.94)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) {
-        _ctrl.reverse();
+    return SpringButton(
+      scaleFactor: 0.94,
+      onTap: () {
         HapticFeedback.lightImpact();
-        widget.onTap();
+        onTap();
       },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scaleAnim,
-        builder: (context, child) =>
-            Transform.scale(scale: _scaleAnim.value, child: child),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.88),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 12, offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(widget.icon, size: 18, color: _C.tealDark),
-            const SizedBox(width: 6),
-            Text(widget.label,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _C.textDark)),
-          ]),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.88),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 12, offset: const Offset(0, 3),
+            ),
+          ],
         ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 18, color: AppColors.tealDark),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w700,
+              color: AppColors.textDarkAlt)),
+        ]),
       ),
     );
   }
 }
 
-Route<dynamic> _smoothRoute(Widget page) {
-  return PageRouteBuilder(
-    pageBuilder: (_, a, __) => page,
-    transitionDuration: const Duration(milliseconds: 380),
-    reverseTransitionDuration: const Duration(milliseconds: 300),
-    transitionsBuilder: (_, animation, __, child) {
-      final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic);
-      return SlideTransition(
-        position: Tween<Offset>(
-                begin: const Offset(1.0, 0.0), end: Offset.zero)
-            .animate(curved),
-        child: FadeTransition(opacity: curved, child: child),
-      );
-    },
-  );
-}
+// _smoothRoute removed — use AppUI.smoothRoute<T>(page) instead
