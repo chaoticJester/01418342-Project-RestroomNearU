@@ -19,6 +19,34 @@ import '../../utils/app_colors.dart';
 typedef _C = AppColors;
 
 // ─────────────────────────────────────────────
+// Manual cluster — groups nearby restrooms
+// ─────────────────────────────────────────────
+class _MarkerCluster {
+  final List<RestroomModel> items;
+  final LatLng position; // centroid
+  _MarkerCluster(this.items, this.position);
+  bool get isCluster => items.length > 1;
+}
+
+List<_MarkerCluster> _buildClusters(
+    List<RestroomModel> restrooms, double zoom) {
+  // Grid cell size in degrees — shrinks as zoom increases
+  final cellSize = 40.0 / (zoom * zoom);
+  final Map<String, List<RestroomModel>> grid = {};
+  for (final r in restrooms) {
+    final col = (r.longitude / cellSize).floor();
+    final row = (r.latitude / cellSize).floor();
+    final key = '$col:$row';
+    grid.putIfAbsent(key, () => []).add(r);
+  }
+  return grid.values.map((items) {
+    final lat = items.map((r) => r.latitude).reduce((a, b) => a + b) / items.length;
+    final lng = items.map((r) => r.longitude).reduce((a, b) => a + b) / items.length;
+    return _MarkerCluster(items, LatLng(lat, lng));
+  }).toList();
+}
+
+// ─────────────────────────────────────────────
 // Marker size tiers — maps zoom → logical dp card size
 // ─────────────────────────────────────────────
 class _MarkerTier {
@@ -104,6 +132,7 @@ class _UserHomePageState extends State<UserHomePage>
   final Completer<GoogleMapController> _mapCompleter = Completer();
   final Map<MarkerId, Marker> _markers = {};
   RestroomModel? _selectedRestroom;
+  int _rebuildGeneration = 0; // cancel stale async builds
 
   // Zoom tracking + debounce
   double _currentZoom = _initialZoom;
@@ -169,7 +198,7 @@ class _UserHomePageState extends State<UserHomePage>
 
   void _onSearchChanged(String val) {
     setState(() => _searchQuery = val);
-    _buildAllMarkers();
+    _rebuildMarkers();
   }
 
   final Map<String, BitmapDescriptor> _bitmapCache = {};
@@ -181,7 +210,7 @@ class _UserHomePageState extends State<UserHomePage>
   @override
   void initState() {
     super.initState();
-    
+
     _listEntryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -199,13 +228,11 @@ class _UserHomePageState extends State<UserHomePage>
 
     _restroomSub = RestroomService().getRestroomsStream().listen((data) {
       if (mounted) {
-        setState(() {
-          restrooms = data;
-          if (_dprInitialized) _buildAllMarkers(); 
-        });
+        setState(() => restrooms = data);
+        _rebuildMarkers();
       }
     });
-    
+
     _loadFavorites();
     _checkLocationPermission();
   }
@@ -213,12 +240,11 @@ class _UserHomePageState extends State<UserHomePage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Get DPR safely from context
     final newDpr = MediaQuery.of(context).devicePixelRatio;
     if (!_dprInitialized || _dpr != newDpr) {
       _dpr = newDpr;
       _dprInitialized = true;
-      _buildAllMarkers();
+      _rebuildMarkers();
     }
   }
 
@@ -260,60 +286,141 @@ class _UserHomePageState extends State<UserHomePage>
 
   void _onCameraMove(CameraPosition pos) {
     final newZoom = pos.zoom;
-    if ((newZoom - _currentZoom).abs() < 0.3) return; 
+    if ((newZoom - _currentZoom).abs() < 0.3) return;
     _currentZoom = newZoom;
-
     _zoomDebounce?.cancel();
-    _zoomDebounce = Timer(const Duration(milliseconds: 120), () {
+    _zoomDebounce = Timer(const Duration(milliseconds: 200), () {
       final newTier = _tierForZoom(_currentZoom);
       if (newTier.minZoom != _currentTier.minZoom) {
         _currentTier = newTier;
-        _buildAllMarkers();
+        _bitmapCache.clear();
       }
+      _rebuildMarkers();
     });
   }
 
-  Future<void> _buildAllMarkers() async {
-    if (!_dprInitialized) return;
-    final Map<MarkerId, Marker> fresh = {};
-    for (final r in _filteredRestrooms) {
-      final isSelected = _selectedRestroom?.restroomId == r.restroomId;
-      final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
-      final id = MarkerId(r.restroomId);
-      fresh[id] = _makeMarker(r, icon);
-    }
-    if (mounted) setState(() { _markers
-      ..clear()
-      ..addAll(fresh); });
+  // Rebuild all markers using manual clustering
+  void _rebuildMarkers() {
+    if (!mounted) return;
+    _rebuildGeneration++;
+    final gen = _rebuildGeneration;
+    final clusters = _buildClusters(_filteredRestrooms, _currentZoom);
+    _buildMarkersFromClusters(clusters, gen);
   }
 
-  Future<void> _refreshSelectionMarkers({
+  Future<void> _buildMarkersFromClusters(
+      List<_MarkerCluster> clusters, int gen) async {
+    final newMarkers = <MarkerId, Marker>{};
+    for (final cluster in clusters) {
+      if (gen != _rebuildGeneration) return; // stale — a newer build started
+      if (cluster.isCluster) {
+        final icon = await _renderClusterIcon(cluster.items.length, _dpr);
+        final mid = MarkerId(
+            'cluster_${cluster.position.latitude}_${cluster.position.longitude}');
+        newMarkers[mid] = Marker(
+          markerId: mid,
+          position: cluster.position,
+          icon: icon,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 2.0,
+          onTap: () async {
+            HapticFeedback.lightImpact();
+            final ctrl = await _mapCompleter.future;
+            ctrl.animateCamera(
+              CameraUpdate.newLatLngZoom(cluster.position, _currentZoom + 2),
+            );
+          },
+        );
+      } else {
+        final r = cluster.items.first;
+        final isSelected = _selectedRestroom?.restroomId == r.restroomId;
+        final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
+        final mid = MarkerId(r.restroomId);
+        newMarkers[mid] = Marker(
+          markerId: mid,
+          position: LatLng(r.latitude, r.longitude),
+          icon: icon,
+          anchor: _currentTier.pillHDp > 0
+              ? const Offset(0.5, 0.60)
+              : const Offset(0.5, 0.5),
+          zIndex: isSelected ? 1.0 : 0.0,
+          onTap: () => _onMarkerTap(r),
+        );
+      }
+    }
+    if (mounted && gen == _rebuildGeneration) {
+      setState(() {
+        _markers
+          ..clear()
+          ..addAll(newMarkers);
+      });
+    }
+  }
+
+  // Render a teal bubble with a count number for clusters
+  static Future<BitmapDescriptor> _renderClusterIcon(
+      int count, double dpr) async {
+    const double sizeDp = 52;
+    final double size = sizeDp * dpr;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+
+    // Outer shadow ring
+    canvas.drawCircle(
+      center,
+      size / 2,
+      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.25),
+    );
+    // Main circle
+    canvas.drawCircle(
+      center,
+      size / 2 - 4 * dpr,
+      Paint()..color = const Color(0xFF4AADA7),
+    );
+    // White border
+    canvas.drawCircle(
+      center,
+      size / 2 - 2 * dpr,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5 * dpr,
+    );
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: count > 99 ? '99+' : '$count',
+        style: TextStyle(
+          fontSize: 15 * dpr,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas,
+        Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.round(), size.round());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(
+      byteData!.buffer.asUint8List(),
+      size: Size(sizeDp, sizeDp),
+    );
+  }
+
+  void _refreshSelectionMarkers({
     RestroomModel? prev,
     RestroomModel? next,
-  }) async {
-    if (!_dprInitialized) return;
-    final updates = <MarkerId, Marker>{};
+  }) {
     for (final r in [prev, next]) {
       if (r == null) continue;
-      final isSelected = next?.restroomId == r.restroomId;
-      final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
-      final id = MarkerId(r.restroomId);
-      updates[id] = _makeMarker(r, icon);
+      _bitmapCache.remove('${r.restroomId}:${_currentTier.minZoom}:s');
+      _bitmapCache.remove('${r.restroomId}:${_currentTier.minZoom}:n');
     }
-    if (mounted) setState(() => _markers.addAll(updates));
-  }
-
-  Marker _makeMarker(RestroomModel r, BitmapDescriptor icon) {
-    return Marker(
-      markerId: MarkerId(r.restroomId),
-      position: LatLng(r.latitude, r.longitude),
-      icon: icon,
-      anchor: _currentTier.pillHDp > 0
-          ? const Offset(0.5, 0.60)
-          : const Offset(0.5, 0.5),
-      zIndex: _selectedRestroom?.restroomId == r.restroomId ? 1.0 : 0.0,
-      onTap: () => _onMarkerTap(r),
-    );
+    _rebuildMarkers();
   }
 
   Future<BitmapDescriptor> _iconForTier(
@@ -499,11 +606,15 @@ class _UserHomePageState extends State<UserHomePage>
               child: GoogleMap(
                 initialCameraPosition: _initialCamera,
                 zoomControlsEnabled: false,
-                myLocationEnabled: _myLocationEnabled, 
-                myLocationButtonEnabled: false,        
+                myLocationEnabled: _myLocationEnabled,
+                myLocationButtonEnabled: false,
                 markers: Set<Marker>.of(_markers.values),
-                onMapCreated: (ctrl) => _mapCompleter.complete(ctrl),
+                onMapCreated: (ctrl) {
+                  _mapCompleter.complete(ctrl);
+                  _rebuildMarkers();
+                },
                 onCameraMove: _onCameraMove,
+                onCameraIdle: _rebuildMarkers,
                 onTap: (_) => _dismissPopup(),
               ),
             ),
@@ -566,7 +677,10 @@ class _UserHomePageState extends State<UserHomePage>
                   onSearchChanged: _onSearchChanged,
                   searchController: _searchController,
                   activeTab: _activeTab,
-                  onTabChanged: (tab) => setState(() => _activeTab = tab),
+                  onTabChanged: (tab) {
+                    setState(() => _activeTab = tab);
+                    _rebuildMarkers();
+                  },
                   favoriteIds: _favoriteIds,
                   onToggleFavorite: _toggleFavorite,
                 );
