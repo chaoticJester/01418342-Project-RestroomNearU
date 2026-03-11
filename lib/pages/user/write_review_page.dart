@@ -30,11 +30,18 @@ class WriteReviewPage extends StatefulWidget {
 
 class _WriteReviewPageState extends State<WriteReviewPage>
     with SingleTickerProviderStateMixin {
-  double overallRating      = 0;
   double cleanlinessRating  = 0;
   double availabilityRating = 0;
   double amenitiesRating    = 0;
   double smellRating        = 0;
+
+  double get overallRating {
+    final ratings = [cleanlinessRating, availabilityRating, amenitiesRating, smellRating]
+        .where((r) => r > 0)
+        .toList();
+    if (ratings.isEmpty) return 0;
+    return ratings.reduce((a, b) => a + b) / ratings.length;
+  }
 
   final Map<String, bool> amenitiesFound = {
     'Has Toilet Paper':      false,
@@ -110,8 +117,9 @@ class _WriteReviewPageState extends State<WriteReviewPage>
   // ── Submit ────────────────────────────────────────────────────────────────
 
   Future<void> _submitReview() async {
-    if (overallRating == 0) {
-      AppUI.showSnackBar(context, 'Please provide an overall rating', isError: true);
+    if (cleanlinessRating == 0 && availabilityRating == 0 &&
+        amenitiesRating == 0 && smellRating == 0) {
+      AppUI.showSnackBar(context, 'Please rate at least one category', isError: true);
       return;
     }
     HapticFeedback.mediumImpact();
@@ -244,20 +252,6 @@ class _WriteReviewPageState extends State<WriteReviewPage>
                         _RestroomInfoCard(name: widget.restroomName),
                         const SizedBox(height: 24),
 
-                        _sectionLabel('Overall Rating *'),
-                        const SizedBox(height: 12),
-                        Center(
-                          child: StarRating(
-                            rating: overallRating,
-                            size: 40,
-                            activeColor: AppColors.orangeAlt,
-                            inactiveColor: AppColors.textLight,
-                            onRatingChanged: (v) =>
-                                setState(() => overallRating = v),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
                         _sectionLabel('Detailed Ratings'),
                         const SizedBox(height: 12),
                         _DetailedRatingCard(
@@ -290,6 +284,8 @@ class _WriteReviewPageState extends State<WriteReviewPage>
                           rating: smellRating,
                           onChanged: (v) => setState(() => smellRating = v),
                         ),
+                        const SizedBox(height: 16),
+                        _OverallRatingDisplay(rating: overallRating),
                         const SizedBox(height: 24),
 
                         _sectionLabel('What did you find?'),
@@ -580,6 +576,55 @@ class _AmenitiesFoundCard extends StatelessWidget {
           );
         }).toList(),
       ),
+    );
+  }
+}
+
+class _OverallRatingDisplay extends StatelessWidget {
+  final double rating;
+  const _OverallRatingDisplay({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasRating = rating > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.orangeAlt.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.orangeAlt.withOpacity(0.25), width: 1),
+      ),
+      child: Row(children: [
+        Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(
+              color: AppColors.orangeAlt.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10)),
+          child: const Icon(Icons.star_rounded, size: 18, color: AppColors.orangeAlt),
+        ),
+        const SizedBox(width: 12),
+        const Text('Overall Rating',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                color: AppColors.textDark)),
+        const Spacer(),
+        if (hasRating) ...
+          List.generate(5, (i) {
+            final full = i < rating.floor();
+            final half = !full && i < rating;
+            return Icon(
+              full ? Icons.star_rounded : half ? Icons.star_half_rounded : Icons.star_outline_rounded,
+              size: 22,
+              color: AppColors.orangeAlt,
+            );
+          })
+        else
+          const Text('Rate categories above',
+              style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+        if (hasRating) ...[const SizedBox(width: 6),
+          Text(rating.toStringAsFixed(1),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                  color: AppColors.orangeAlt))],
+      ]),
     );
   }
 }
