@@ -23,7 +23,7 @@ class ReviewService {
 
         final data = restroomSnapshot.data() as Map<String, dynamic>;
 
-        // 2. คำนวณค่าเฉลี่ยใหม่สำหรับทุกหมวดหมู่ (ใช้การเช็ค null ที่ปลอดภัยกว่า)
+        // 2. คำนวณค่าเฉลี่ยใหม่สำหรับทุกหมวดหมู่
         int currentTotal = (data['totalRatings'] ?? 0).toInt();
         int newTotal = currentTotal + 1;
 
@@ -46,10 +46,12 @@ class ReviewService {
         Map<String, dynamic> reviewData = review.toMap();
         reviewData['reviewId'] = reviewRef.id;
         
-        // Override ALL time fields
-        reviewData['timestamp'] = FieldValue.serverTimestamp();
+        // Override ALL time fields with server timestamp
+        // ✅ Standardized to use createdAt/updatedAt only
         reviewData['createdAt'] = FieldValue.serverTimestamp();
         reviewData['updatedAt'] = FieldValue.serverTimestamp();
+        // Remove 'timestamp' if it exists in the map from toMap()
+        reviewData.remove('timestamp');
 
         // 4. เขียนลง database
         transaction.set(reviewRef, reviewData);
@@ -62,14 +64,14 @@ class ReviewService {
           'totalRatings': newTotal,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-      }, timeout: const Duration(seconds: 15)); // เพิ่ม Timeout ป้องกันค้าง
+      }, timeout: const Duration(seconds: 15));
 
-      // ✅ Increment review count AFTER transaction completes
+      // Increment review count AFTER transaction completes
       await UserService().incrementReviewCount(reviewRef.id);
       
     } catch (e) {
       debugPrint("Error in addReviewWithRatingUpdate: $e");
-      rethrow; // ส่ง Error กลับไปที่ UI
+      rethrow;
     }
   }
 
@@ -78,7 +80,7 @@ class ReviewService {
   Stream<List<ReviewModel>> getReviewsByRestroom(String restroomId) {
     return _reviewCollection
         .where('restroomId', isEqualTo: restroomId) 
-        .orderBy('timestamp', descending: true)     
+        .orderBy('createdAt', descending: true)     
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
@@ -101,7 +103,7 @@ class ReviewService {
           doc.id,
         );
       }).toList();
-      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return list;
     });
   }
@@ -117,13 +119,27 @@ class ReviewService {
           doc.id,
         );
       }).toList();
-      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return list;
     });
   }
 
   // UPDATE: แก้ไขรีวิว
-  Future<void> updateReview(String reviewId, String restroomId, double oldRating, double newRating, String newComment) async {
+  Future<void> updateReview({
+    required String reviewId,
+    required String restroomId,
+    required double oldRating,
+    required double newRating,
+    required String newComment,
+    required double oldCleanliness,
+    required double newCleanliness,
+    required double oldAvailability,
+    required double newAvailability,
+    required double oldAmenities,
+    required double newAmenities,
+    required double oldSmell,
+    required double newSmell,
+  }) async {
     final firestore = FirebaseFirestore.instance;
     final restroomRef = firestore.collection('restrooms').doc(restroomId);
     final reviewRef = _reviewCollection.doc(reviewId);
@@ -134,19 +150,32 @@ class ReviewService {
         throw Exception("Restroom does not exist!");
       }
 
-      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
-      int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
+      final data = restroomSnapshot.data() as Map<String, dynamic>;
+      int currentTotal = (data['totalRatings'] ?? 0).toInt();
 
-      double newAvg = currentTotal <= 0 ? newRating : ((currentAvg * currentTotal) - oldRating + newRating) / currentTotal;
+      double _recalc(String field, double oldVal, double newVal) {
+        double current = (data[field] ?? 0.0).toDouble();
+        if (currentTotal <= 0) return newVal;
+        return ((current * currentTotal) - oldVal + newVal) / currentTotal;
+      }
 
       transaction.update(reviewRef, {
         'comment': newComment,
         'rating': newRating,
-        'timestamp': FieldValue.serverTimestamp(),
+        'cleanlinessRating': newCleanliness,
+        'availabilityRating': newAvailability,
+        'amenitiesRating': newAmenities,
+        'smellRating': newSmell,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
       transaction.update(restroomRef, {
-        'avgRating': newAvg,
+        'avgRating':       _recalc('avgRating',       oldRating,       newRating),
+        'avgCleanliness':  _recalc('avgCleanliness',  oldCleanliness,  newCleanliness),
+        'avgAvailability': _recalc('avgAvailability', oldAvailability, newAvailability),
+        'avgAmenities':    _recalc('avgAmenities',    oldAmenities,    newAmenities),
+        'avgScent':        _recalc('avgScent',        oldSmell,        newSmell),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
     });
   }
@@ -158,17 +187,19 @@ class ReviewService {
     if (!snapshot.exists) return;
 
     final data = snapshot.data() as Map<String, dynamic>;
-    final List likedBy = data['likedBy'] ?? [];
+    final List likedBy = List<String>.from(data['likedBy'] ?? []);
     final bool alreadyLiked = likedBy.contains(userId);
     final String reviewerId = data['reviewerId'] ?? '';
 
+    // ✅ FIX: Sync helpfulCount with the actual number of likes in the review document
     await reviewRef.update({
-      'totalLikes': FieldValue.increment(alreadyLiked ? -1 : 1),
+      'helpfulCount': FieldValue.increment(alreadyLiked ? -1 : 1),
       'likedBy': alreadyLiked 
           ? FieldValue.arrayRemove([userId]) 
           : FieldValue.arrayUnion([userId]),
     });
 
+    // Also update the reviewer's global helpful count
     if (reviewerId.isNotEmpty) {
       if (alreadyLiked) {
         await UserService().decrementHelpfulCount(reviewerId);
@@ -179,10 +210,10 @@ class ReviewService {
   }
 
   // DELETE: ลบรีวิว
-  Future<void> deleteReview(String reviewId, double rating, String restroomId) async {
+  Future<void> deleteReview(ReviewModel review) async {
     final firestore = FirebaseFirestore.instance;
-    final restroomRef = firestore.collection('restrooms').doc(restroomId);
-    final reviewRef = _reviewCollection.doc(reviewId);
+    final restroomRef = firestore.collection('restrooms').doc(review.restroomId);
+    final reviewRef = _reviewCollection.doc(review.reviewId);
 
     await firestore.runTransaction((transaction) async {
       DocumentSnapshot restroomSnapshot = await transaction.get(restroomRef);
@@ -190,19 +221,29 @@ class ReviewService {
         throw Exception("Restroom does not exist!");
       }
 
-      double currentAvg = (restroomSnapshot.get('avgRating') ?? 0.0).toDouble();
-      int currentTotal = (restroomSnapshot.get('totalRatings') ?? 0).toInt();
+      final data = restroomSnapshot.data() as Map<String, dynamic>;
+      int currentTotal = (data['totalRatings'] ?? 0).toInt();
+      int newTotal = currentTotal <= 1 ? 0 : currentTotal - 1;
 
-      int newTotal = currentTotal - 1;
-      double newAvg = newTotal <= 0 ? 0.0 : ((currentAvg * currentTotal) - rating) / newTotal;
+      double _removeFromAvg(String field, double removedValue) {
+        if (newTotal <= 0) return 0.0;
+        double current = (data[field] ?? 0.0).toDouble();
+        return ((current * currentTotal) - removedValue) / newTotal;
+      }
 
       transaction.delete(reviewRef);
       transaction.update(restroomRef, {
-        'avgRating': newAvg,
-        'totalRatings': newTotal < 0 ? 0 : newTotal, 
+        'totalRatings':    newTotal,
+        'avgRating':       _removeFromAvg('avgRating',       review.rating),
+        'avgCleanliness':  _removeFromAvg('avgCleanliness',  review.cleanlinessRating),
+        'avgAvailability': _removeFromAvg('avgAvailability', review.availabilityRating),
+        'avgAmenities':    _removeFromAvg('avgAmenities',    review.amenitiesRating),
+        'avgScent':        _removeFromAvg('avgScent',        review.smellRating),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
     });
-    await UserService().decrementReviewCount(reviewRef.id);
+
+    await UserService().decrementReviewCount(review.reviewId);
   }
 
   String getRatingBadge(double rating) {

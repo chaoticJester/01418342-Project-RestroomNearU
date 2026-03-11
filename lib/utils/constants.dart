@@ -33,15 +33,19 @@ class AppConstants {
   static const int maxPhotosPerReview = 10;
 }
 
-/// Route Names
+/// Route Names — ✅ FIX #13: kept in sync with the routes defined in main.dart.
+/// Always update BOTH places if a route path changes.
 class RouteNames {
-  static const String login = '/login';
-  static const String userHome = '/user_home';
-  static const String restroomDetail = '/restroom_detail';
+  static const String login          = '/login_page';
+  static const String userHome       = '/user_homepage';
   static const String addNewRestroom = '/add_new_restroom';
-  static const String writeReview = '/write_review';
-  static const String photoGallery = '/photo_gallery';
-  static const String reportIssue = '/report_issue';
+  static const String profile        = '/profile';
+  static const String adminHome      = '/admin_homepage';
+  static const String adminRequests  = '/admin_requests';
+  static const String adminReports   = '/admin_reports';
+  static const String adminToilets   = '/admin_toilets';
+  static const String adminProfile   = '/admin_profile';
+  static const String adminUsers     = '/admin_users';
 }
 
 /// Filter Options

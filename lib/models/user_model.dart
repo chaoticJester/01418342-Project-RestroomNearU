@@ -98,6 +98,9 @@ class UserModel {
     };
   }
 
+  // ✅ FIX #9: Use a sentinel so callers can explicitly pass null to clear suspendedUntil.
+  // Pattern: pass clearSuspension: true to set suspendedUntil → null.
+  // Normal copyWith(suspendedUntil: someDate) still works as before.
   UserModel copyWith({
     String? displayName,
     String? photoUrl,
@@ -107,6 +110,7 @@ class UserModel {
     int? totalHelpful,
     bool? isBanned,
     DateTime? suspendedUntil,
+    bool clearSuspension = false,   // ✅ set true to force suspendedUntil → null
   }) {
     return UserModel(
       userId: userId,
@@ -121,7 +125,10 @@ class UserModel {
       photoUrl: photoUrl ?? this.photoUrl,
       favoriteRestrooms: favoriteRestrooms,
       isBanned: isBanned ?? this.isBanned,
-      suspendedUntil: suspendedUntil ?? this.suspendedUntil,
+      // clearSuspension: true  → null (lift suspension)
+      // suspendedUntil provided → use it
+      // neither provided       → keep existing value
+      suspendedUntil: clearSuspension ? null : (suspendedUntil ?? this.suspendedUntil),
     );
   }
 }

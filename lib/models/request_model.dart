@@ -9,45 +9,47 @@ class RequestModel {
   final String userId;
   final String? adminId;
   final Status status;
-  final Timestamp createdAt; 
+  // ✅ FIX #2: Use DateTime consistently (was Timestamp, inconsistent with all other models)
+  final DateTime createdAt;
 
   RequestModel({
     required this.requestId,
     required this.restroom,
     required this.userId,
     this.adminId,
-    this.status = Status.pending, 
-    required this.createdAt,
-  });
+    this.status = Status.pending,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
 
-  // 1. เมธอดสำหรับดึงข้อมูลจาก Firestore มาแปลงเป็น RequestModel
+  // 1. Convert Firestore → RequestModel
   factory RequestModel.fromMap(Map<String, dynamic> map, String documentId) {
-    // ดึง Map ของ restroom ออกมาก่อนเพื่อความสะอาดของโค้ด
     final restroomMap = map['restroom'] as Map<String, dynamic>;
 
     return RequestModel(
-      requestId: documentId, 
-      // ดึง ID ออกมาจาก restroomMap โดยตรง 
+      requestId: documentId,
       restroom: RestroomModel.fromMap(restroomMap, restroomMap['restroomId'] ?? ''),
       userId: map['userId'] ?? '',
       adminId: map['adminId'],
       status: Status.values.firstWhere(
         (e) => e.name == map['status'],
-        orElse: () => Status.pending, 
+        orElse: () => Status.pending,
       ),
-      createdAt: map['createdAt'] as Timestamp? ?? Timestamp.now(),
+      // ✅ Convert Timestamp → DateTime on read
+      createdAt: map['createdAt'] != null
+          ? (map['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 
-  // 2. เมธอดสำหรับแปลง RequestModel เป็น Map เพื่อนำไปบันทึกลง Firestore
+  // 2. Convert RequestModel → Map for Firestore
   Map<String, dynamic> toMap() {
     return {
-      'restroom': restroom.toMap(), 
+      'restroom': restroom.toMap(),
       'userId': userId,
       'adminId': adminId,
-      // แปลง enum Status กลับไปเป็น String ก่อนบันทึกเข้า Firestore
-      'status': status.name, 
-      'createdAt': createdAt,
+      'status': status.name,
+      // ✅ Convert DateTime → Timestamp on write
+      'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 }

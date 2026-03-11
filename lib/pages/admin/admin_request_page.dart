@@ -7,6 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:restroom_near_u/services/restroom_firestore.dart';
+import 'package:restroom_near_u/services/user_firestore.dart';   // ✅ FIX #7: needed for incrementAddedCountForUser
 import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
 
@@ -131,8 +132,7 @@ class _AdminRequestPageState extends State<AdminRequestPage>
                     ),
                     Text(
                       '$pendingCount pending',
-                      style: const TextStyle(
-                          fontSize: 12, color: _C.textMid),
+                      style: const TextStyle(fontSize: 12, color: _C.textMid),
                     ),
                   ],
                 ),
@@ -174,11 +174,12 @@ class _AdminRequestPageState extends State<AdminRequestPage>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                      color: isSelected
-                          ? chipColor.withOpacity(0.3)
-                          : Colors.black.withOpacity(0.05),
-                      blurRadius: isSelected ? 8 : 4,
-                      offset: const Offset(0, 2)),
+                    color: isSelected
+                        ? chipColor.withOpacity(0.3)
+                        : Colors.black.withOpacity(0.05),
+                    blurRadius: isSelected ? 8 : 4,
+                    offset: const Offset(0, 2),
+                  ),
                 ],
                 border: Border.all(
                   color: isSelected ? chipColor : _C.divider,
@@ -211,19 +212,16 @@ class _AdminRequestPageState extends State<AdminRequestPage>
         }
 
         final requests = snapshot.data ?? [];
-        if (requests.isEmpty) {
-          return _buildEmptyState();
-        }
+        if (requests.isEmpty) return _buildEmptyState();
 
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
           itemCount: requests.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) =>
-              _RequestCard(
-                request: requests[index],
-                requestService: _requestService,
-              ),
+          itemBuilder: (context, index) => _RequestCard(
+            request: requests[index],
+            requestService: _requestService,
+          ),
         );
       },
     );
@@ -241,15 +239,12 @@ class _AdminRequestPageState extends State<AdminRequestPage>
               color: _C.teal.withOpacity(0.2),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.inbox_rounded,
-                size: 36, color: _C.tealDark),
+            child: const Icon(Icons.inbox_rounded, size: 36, color: _C.tealDark),
           ),
           const SizedBox(height: 14),
           const Text('No requests found',
               style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: _C.textDark)),
+                  fontSize: 15, fontWeight: FontWeight.w700, color: _C.textDark)),
           const SizedBox(height: 4),
           const Text('Check back later',
               style: TextStyle(fontSize: 12, color: _C.textMid)),
@@ -266,8 +261,7 @@ class _RequestCard extends StatefulWidget {
   final RequestModel request;
   final RequestService requestService;
 
-  const _RequestCard(
-      {required this.request, required this.requestService});
+  const _RequestCard({required this.request, required this.requestService});
 
   @override
   State<_RequestCard> createState() => _RequestCardState();
@@ -294,7 +288,10 @@ class _RequestCardState extends State<_RequestCard>
 
   Future<void> _fetchUserName() async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.request.userId).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.request.userId)
+          .get();
       if (doc.exists && mounted) {
         setState(() => _userName = doc.data()?['displayName']);
       }
@@ -309,12 +306,11 @@ class _RequestCardState extends State<_RequestCard>
 
   @override
   Widget build(BuildContext context) {
-    final r        = widget.request;
-    final restroom = r.restroom;
-    final status   = r.status;
-    final createdAt = r.createdAt.toDate();
-
-    final formattedDate = AppHelpers.formatDateTime(createdAt);
+    final r         = widget.request;
+    final restroom  = r.restroom;
+    final status    = r.status;
+    // ✅ FIX #2: createdAt is now DateTime — no .toDate() needed
+    final formattedDate = AppHelpers.formatDateTime(r.createdAt);
 
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
@@ -335,8 +331,7 @@ class _RequestCardState extends State<_RequestCard>
       onTapCancel: () => _ctrl.reverse(),
       child: AnimatedBuilder(
         animation: _scale,
-        builder: (_, child) =>
-            Transform.scale(scale: _scale.value, child: child),
+        builder: (_, child) => Transform.scale(scale: _scale.value, child: child),
         child: Container(
           decoration: BoxDecoration(
             color: _C.card,
@@ -344,9 +339,10 @@ class _RequestCardState extends State<_RequestCard>
             border: Border.all(color: _C.divider, width: 1),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2)),
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
             ],
           ),
           child: Column(
@@ -356,7 +352,6 @@ class _RequestCardState extends State<_RequestCard>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ID row
                     Row(
                       children: [
                         Container(
@@ -374,18 +369,14 @@ class _RequestCardState extends State<_RequestCard>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                r.requestId,
-                                style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: _C.textDark),
-                              ),
-                              Text(
-                                formattedDate,
-                                style: const TextStyle(
-                                    fontSize: 10, color: _C.textLight),
-                              ),
+                              Text(r.requestId,
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: _C.textDark)),
+                              Text(formattedDate,
+                                  style: const TextStyle(
+                                      fontSize: 10, color: _C.textLight)),
                             ],
                           ),
                         ),
@@ -395,17 +386,11 @@ class _RequestCardState extends State<_RequestCard>
                     const SizedBox(height: 10),
                     Divider(color: _C.divider, height: 1, thickness: 1),
                     const SizedBox(height: 10),
-
-                    // Location
                     _infoRow(Icons.wc_rounded, restroom.restroomName),
                     const SizedBox(height: 5),
-                    _infoRow(
-                        Icons.location_on_rounded, restroom.address),
+                    _infoRow(Icons.location_on_rounded, restroom.address),
                     const SizedBox(height: 5),
-                    _infoRow(
-                        Icons.person_rounded, _userName ?? r.userId),
-
-                    // Photos count
+                    _infoRow(Icons.person_rounded, _userName ?? r.userId),
                     if (restroom.photos.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Row(
@@ -424,8 +409,6 @@ class _RequestCardState extends State<_RequestCard>
                   ],
                 ),
               ),
-
-              // Footer: tap to review
               if (status == Status.pending)
                 Container(
                   width: double.infinity,
@@ -436,13 +419,11 @@ class _RequestCardState extends State<_RequestCard>
                         bottom: Radius.circular(16)),
                   ),
                   child: const Center(
-                    child: Text(
-                      'Tap to review →',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _C.tealDark),
-                    ),
+                    child: Text('Tap to review →',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _C.tealDark)),
                   ),
                 ),
             ],
@@ -471,13 +452,9 @@ class _RequestCardState extends State<_RequestCard>
         color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: color),
-      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700, color: color)),
     );
   }
 
@@ -487,12 +464,10 @@ class _RequestCardState extends State<_RequestCard>
         Icon(icon, size: 12, color: _C.textLight),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 12, color: _C.textMid),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text(text,
+              style: const TextStyle(fontSize: 12, color: _C.textMid),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ),
       ],
     );
@@ -502,7 +477,7 @@ class _RequestCardState extends State<_RequestCard>
 // ─────────────────────────────────────────────
 // Request Detail Popup (bottom sheet)
 // ─────────────────────────────────────────────
-class _RequestPopup extends StatelessWidget {
+class _RequestPopup extends StatefulWidget {
   final RequestModel request;
   final RequestService requestService;
   final String? userName;
@@ -510,8 +485,18 @@ class _RequestPopup extends StatelessWidget {
   const _RequestPopup(
       {required this.request, required this.requestService, this.userName});
 
-  // ── EmailJS helper ──────────────────────────────────────────────────────
-  // Returns null on success, or an error message string on failure
+  @override
+  State<_RequestPopup> createState() => _RequestPopupState();
+}
+
+class _RequestPopupState extends State<_RequestPopup> {
+  bool _isProcessing = false;
+
+  RequestModel get request => widget.request;
+  RequestService get requestService => widget.requestService;
+  String? get userName => widget.userName;
+
+  // ── EmailJS helper ────────────────────────────────────────────────────
   Future<String?> _sendEmail({
     required String templateId,
     required Map<String, String> templateParams,
@@ -519,9 +504,6 @@ class _RequestPopup extends StatelessWidget {
     try {
       final serviceId = dotenv.env['EMAILJS_SERVICE_ID'] ?? '';
       final publicKey = dotenv.env['EMAILJS_PUBLIC_KEY'] ?? '';
-
-      debugPrint('EmailJS → service: $serviceId, template: $templateId, key: $publicKey');
-      debugPrint('EmailJS → params: $templateParams');
 
       final response = await http.post(
         Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
@@ -538,55 +520,53 @@ class _RequestPopup extends StatelessWidget {
       );
 
       debugPrint('EmailJS response: ${response.statusCode} — ${response.body}');
-
-      if (response.statusCode == 200) {
-        return null; // success
-      } else {
-        return 'EmailJS error ${response.statusCode}: ${response.body}';
-      }
+      if (response.statusCode == 200) return null;
+      return 'EmailJS error ${response.statusCode}: ${response.body}';
     } catch (e) {
       return 'EmailJS exception: $e';
     }
   }
 
+  // ── Approve ───────────────────────────────────────────────────────────
   Future<void> _approve(BuildContext context) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     try {
       final newRestroomId =
           FirebaseFirestore.instance.collection('restrooms').doc().id;
 
-      final restroom = request.restroom.copyWith();
+      final restroom = request.restroom;
       final restroomWithId = RestroomModel(
-        restroomId: newRestroomId,
+        restroomId:   newRestroomId,
         restroomName: restroom.restroomName,
-        address: restroom.address,
-        latitude: restroom.latitude,
-        longitude: restroom.longitude,
-        openTime: restroom.openTime,
-        closeTime: restroom.closeTime,
-        isFree: restroom.isFree,
-        price: restroom.price,
-        is24hrs: restroom.is24hrs,
-        phoneNumber: restroom.phoneNumber,
-        amenities: restroom.amenities,
-        photos: restroom.photos,
-        createdBy: restroom.createdBy,
+        address:      restroom.address,
+        latitude:     restroom.latitude,
+        longitude:    restroom.longitude,
+        openTime:     restroom.openTime,
+        closeTime:    restroom.closeTime,
+        isFree:       restroom.isFree,
+        price:        restroom.price,
+        is24hrs:      restroom.is24hrs,
+        phoneNumber:  restroom.phoneNumber,
+        amenities:    restroom.amenities,
+        photos:       restroom.photos,
+        createdBy:    restroom.createdBy,
       );
 
       await RestroomService().createRestroom(restroomWithId);
       await requestService.updateSpecificField(request.requestId, {
-        'status': Status.approved.name,
+        'status':     Status.approved.name,
         'restroomId': newRestroomId,
       });
 
-      // ✅ Increment totalAdded for submitting user
-      if (request.restroom.createdBy.isNotEmpty) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(request.restroom.createdBy)
-            .update({'totalAdded': FieldValue.increment(1)});
-      }
+      // ✅ FIX #7: Use UserService so points are also incremented (was a raw
+      //    Firestore update that only bumped totalAdded, skipping points).
+      final submitterId = restroom.createdBy.isNotEmpty
+          ? restroom.createdBy
+          : request.userId;
+      await UserService().incrementAddedCountForUser(submitterId);
 
-      // ✅ Send approval email
+      // Send approval email
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(request.userId)
@@ -614,11 +594,15 @@ class _RequestPopup extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
+  // ── Reject ────────────────────────────────────────────────────────────
   Future<void> _reject(BuildContext context) async {
-    // Ask for optional reason first
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -660,7 +644,8 @@ class _RequestPopup extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Reject',
-                style: TextStyle(color: _C.redLight, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    color: _C.redLight, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -675,7 +660,6 @@ class _RequestPopup extends StatelessWidget {
 
       await requestService.updateSpecificField(request.requestId, updateData);
 
-      // ✅ Send rejection email
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(request.userId)
@@ -700,10 +684,13 @@ class _RequestPopup extends StatelessWidget {
 
       if (context.mounted) {
         Navigator.pop(context);
-        _snack(context, 'Request rejected — user notified by email.', _C.redLight);
+        _snack(
+            context, 'Request rejected — user notified by email.', _C.redLight);
       }
     } catch (e) {
       if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -718,14 +705,14 @@ class _RequestPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final r         = request.restroom;
-    final createdAt = request.createdAt.toDate();
-    final formattedDate = AppHelpers.formatDateOnly(createdAt);
+    final r = request.restroom;
+    // ✅ FIX #2: createdAt is now DateTime — no .toDate() needed
+    final formattedDate = AppHelpers.formatDateOnly(request.createdAt);
     final hoursText = r.is24hrs
         ? '24 Hours'
         : (r.openTime != null && r.closeTime != null
-        ? '${r.openTime} – ${r.closeTime}'
-        : 'N/A');
+            ? '${r.openTime} – ${r.closeTime}'
+            : 'N/A');
 
     return DraggableScrollableSheet(
       initialChildSize: 0.92,
@@ -738,7 +725,6 @@ class _RequestPopup extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // Handle
             Padding(
               padding: const EdgeInsets.only(top: 10, bottom: 4),
               child: Container(
@@ -756,7 +742,6 @@ class _RequestPopup extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title
                     Text(r.restroomName,
                         style: const TextStyle(
                             fontSize: 18,
@@ -768,7 +753,6 @@ class _RequestPopup extends StatelessWidget {
                             fontSize: 10, color: _C.textLight)),
                     const SizedBox(height: 16),
 
-                    // Price & Hours
                     Row(
                       children: [
                         Expanded(
@@ -796,39 +780,32 @@ class _RequestPopup extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
 
-                    // Address
                     _detailRow(Icons.location_on_rounded, r.address),
                     const SizedBox(height: 16),
 
-                    // Photos
-                    _popupSectionLabel('Photos (${r.photos.length})',
-                        Icons.photo_library_rounded),
+                    _popupSectionLabel(
+                        'Photos (${r.photos.length})', Icons.photo_library_rounded),
                     const SizedBox(height: 10),
                     _buildPhotoGrid(r.photos),
                     const SizedBox(height: 16),
 
-                    // Amenities
                     _popupSectionLabel(
                         'Amenities', Icons.check_circle_outline_rounded),
                     const SizedBox(height: 8),
                     _buildAmenities(r.amenities),
                     const SizedBox(height: 16),
 
-                    // Submitted by
-                    _popupSectionLabel(
-                        'Submitted By', Icons.person_rounded),
+                    _popupSectionLabel('Submitted By', Icons.person_rounded),
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: _C.card,
                         borderRadius: BorderRadius.circular(14),
-                        border:
-                        Border.all(color: _C.divider, width: 1),
+                        border: Border.all(color: _C.divider, width: 1),
                       ),
                       child: Row(
-                        mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(userName ?? request.userId,
                               style: const TextStyle(
@@ -853,7 +830,6 @@ class _RequestPopup extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
 
-                    // Action buttons
                     if (request.status == Status.pending)
                       Row(
                         children: [
@@ -861,6 +837,7 @@ class _RequestPopup extends StatelessWidget {
                             child: _ActionButton(
                               label: 'Approve',
                               color: _C.green,
+                              isLoading: _isProcessing,
                               onTap: () => _approve(context),
                             ),
                           ),
@@ -869,6 +846,7 @@ class _RequestPopup extends StatelessWidget {
                             child: _ActionButton(
                               label: 'Reject',
                               color: _C.redLight,
+                              isLoading: _isProcessing,
                               onTap: () => _reject(context),
                             ),
                           ),
@@ -881,8 +859,8 @@ class _RequestPopup extends StatelessWidget {
                               horizontal: 20, vertical: 10),
                           decoration: BoxDecoration(
                             color: (request.status == Status.approved
-                                ? _C.green
-                                : _C.redLight)
+                                    ? _C.green
+                                    : _C.redLight)
                                 .withOpacity(0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -938,8 +916,7 @@ class _RequestPopup extends StatelessWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(text,
-              style: const TextStyle(
-                  fontSize: 12, color: _C.textMid)),
+              style: const TextStyle(fontSize: 12, color: _C.textMid)),
         ),
       ],
     );
@@ -951,16 +928,16 @@ class _RequestPopup extends StatelessWidget {
     return Row(
       children: [
         ...displayPhotos.map((url) => Container(
-          width: 84,
-          height: 62,
-          margin: const EdgeInsets.only(right: 8),
-          decoration: BoxDecoration(
-            color: _C.divider,
-            borderRadius: BorderRadius.circular(10),
-            image: DecorationImage(
-                image: NetworkImage(url), fit: BoxFit.cover),
-          ),
-        )),
+              width: 84,
+              height: 62,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _C.divider,
+                borderRadius: BorderRadius.circular(10),
+                image: DecorationImage(
+                    image: NetworkImage(url), fit: BoxFit.cover),
+              ),
+            )),
         Container(
           width: 84,
           height: 62,
@@ -984,10 +961,14 @@ class _RequestPopup extends StatelessWidget {
 
   Widget _buildAmenities(Map<String, bool> amenities) {
     final defaults = {
-      'Toilet Paper': false, 'Hand Dryer': false,
-      'Baby Changing': false, 'WiFi': false,
-      'Soap': false, 'Wheelchair': false,
-      'Hot Water': false, 'Power Outlet': false,
+      'Toilet Paper': false,
+      'Hand Dryer': false,
+      'Baby Changing': false,
+      'WiFi': false,
+      'Soap': false,
+      'Wheelchair': false,
+      'Hot Water': false,
+      'Power Outlet': false,
     };
     final merged = {...defaults, ...amenities};
     final keys   = merged.keys.toList();
@@ -1023,9 +1004,8 @@ class _RequestPopup extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 11,
                         color: has ? _C.textDark : _C.textLight,
-                        fontWeight: has
-                            ? FontWeight.w600
-                            : FontWeight.w400)),
+                        fontWeight:
+                            has ? FontWeight.w600 : FontWeight.w400)),
               ),
             ],
           ),
@@ -1095,8 +1075,9 @@ class _ActionButton extends StatefulWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+  final bool isLoading;
   const _ActionButton(
-      {required this.label, required this.color, required this.onTap});
+      {required this.label, required this.color, required this.onTap, this.isLoading = false});
 
   @override
   State<_ActionButton> createState() => _ActionButtonState();
@@ -1127,46 +1108,51 @@ class _ActionButtonState extends State<_ActionButton>
 
   @override
   Widget build(BuildContext context) {
+    final disabled = widget.isLoading;
     return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) {
+      onTapDown: disabled ? null : (_) => _ctrl.forward(),
+      onTapUp: disabled ? null : (_) {
         _ctrl.reverse();
         HapticFeedback.mediumImpact();
         widget.onTap();
       },
-      onTapCancel: () => _ctrl.reverse(),
+      onTapCancel: disabled ? null : () => _ctrl.reverse(),
       child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                widget.color,
-                widget.color.withOpacity(0.8),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withOpacity(0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 5),
+        child: AnimatedOpacity(
+          opacity: disabled ? 0.6 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [widget.color, widget.color.withOpacity(0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              widget.label,
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Center(
+              child: disabled
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(widget.label,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
             ),
           ),
         ),
@@ -1231,9 +1217,10 @@ class _BackButtonState extends State<_BackButton>
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2)),
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
             ],
           ),
           child: const Icon(Icons.arrow_back_ios_new_rounded,

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -5,31 +7,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-
-// ─────────────────────────────────────────────
-// Design tokens - Figma inspired theme
-// ─────────────────────────────────────────────
-class _C {
-  static const bg        = Color(0xFFF5F1E8);  // Warm cream background
-  static const card      = Color(0xFFFFFDFA);  // Lighter card surface
-  static const pink      = Color(0xFFEC9B9B);  // Soft pink accent
-  static const pinkLight = Color(0xFFF5D4D4);  // Light pink for backgrounds
-  static const mint      = Color(0xFFA8D5D5);  // Mint/teal accent
-  static const mintDark  = Color(0xFF88B5B5);  // Darker mint
-  static const orange    = Color(0xFFF5A162);  // Warm orange
-  static const textDark  = Color(0xFF2C2C2C);  // Near black
-  static const textMid   = Color(0xFF6B6B6B);  // Medium gray
-  static const textLight = Color(0xFFA5A5A5);  // Light gray
-  static const divider   = Color(0xFFE8E4DB);  // Soft divider
-  static const fieldFill = Color(0xFFFFFBF5);  // Input field background
-}
+import '../../services/location_service.dart';
+import '../../utils/app_colors.dart';
+import '../../utils/app_ui.dart';
+import '../../widgets/spring_button.dart';
+import '../../widgets/photo_source_button.dart';
 
 class AddNewRestroomPage extends StatefulWidget {
   const AddNewRestroomPage({Key? key}) : super(key: key);
@@ -40,22 +30,29 @@ class AddNewRestroomPage extends StatefulWidget {
 
 class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     with SingleTickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController    = TextEditingController();
-  final _locationController = TextEditingController();
-  final _phoneController   = TextEditingController();
+  final _formKey             = GlobalKey<FormState>();
+  final _nameController      = TextEditingController();
+  final _locationController  = TextEditingController();
+  final _phoneController     = TextEditingController();
+  final _priceController     = TextEditingController();
+  final _addressFocusNode    = FocusNode();
+
+  // Places Autocomplete
+  List<_PlaceSuggestion> _suggestions = [];
+  bool _showSuggestions = false;
+  Timer? _debounce;
+
   GoogleMapController? _mapController;
   LatLng _currentMapPosition = const LatLng(13.8478, 100.5696);
   double? _selectedLatitude;
   double? _selectedLongitude;
   bool _hasLocationPermission = false;
 
-  bool isFree = true;
+  bool isFree    = true;
   bool is24Hours = true;
   TimeOfDay? openTime;
   TimeOfDay? closeTime;
 
-  // Amenities
   final Map<String, bool> _amenities = {
     'Toilet Paper':          true,
     'Soap':                  true,
@@ -78,55 +75,15 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     'Power Outlet':          Icons.electric_bolt_rounded,
   };
 
-  List<String> photoUrls = [];
-  List<File> _localPhotos = [];   // local files staged before upload
-  bool _isUploadingPhotos = false;
+  List<File> _localPhotos     = [];
+  bool _isUploadingPhotos     = false;
+  bool _isSubmitting           = false;
 
-  // Entry animation
   late AnimationController _enterCtrl;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
+  late Animation<double>   _fadeAnim;
+  late Animation<Offset>   _slideAnim;
 
-  Future<void> _getInitialLocation() async {
-    try {
-      // 1. เช็ค GPS และ Permission 
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return; 
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-      if (permission == LocationPermission.deniedForever) return;
-
-      setState(() {
-        _hasLocationPermission = true;
-      });
-
-      // 2. ดึงพิกัดปัจจุบัน
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        )
-      );
-      // 3. อัปเดตตัวแปรตำแหน่ง
-      setState(() {
-        _selectedLatitude = position.latitude;
-        _selectedLongitude = position.longitude;
-        _currentMapPosition = LatLng(position.latitude, position.longitude);
-      });
-
-      // 4. สั่งให้กล้องของแผนที่วิ่งไปที่ตำแหน่งผู้ใช้ทันที
-      if (_mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
-        );
-      }
-    } catch (e) {
-      print("Error getting initial location: $e");
-    }
-  }
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -139,231 +96,305 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
         .animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
 
-    _getInitialLocation();
+    _locationController.addListener(_onAddressChanged);
+    _addressFocusNode.addListener(() {
+      if (!_addressFocusNode.hasFocus) {
+        setState(() => _showSuggestions = false);
+      }
+    });
+
+    _initLocation();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _enterCtrl.dispose();
     _nameController.dispose();
     _locationController.dispose();
     _phoneController.dispose();
+    _priceController.dispose();
+    _addressFocusNode.dispose();
     super.dispose();
   }
+
+  // ── Places Autocomplete ───────────────────────────────────────────────────
+
+  void _onAddressChanged() {
+    final query = _locationController.text.trim();
+    if (query.length < 3) {
+      setState(() { _suggestions = []; _showSuggestions = false; });
+      return;
+    }
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _fetchSuggestions(query));
+  }
+
+  Future<void> _fetchSuggestions(String query) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY_ANDROID'] ?? '';
+
+    final uri = Uri.https('maps.googleapis.com', '/maps/api/place/autocomplete/json', {
+      'input': query,
+      'key': apiKey,
+      'language': 'th',
+      'components': 'country:th',
+      'types': 'establishment',
+    });
+
+    try {
+      final response = await http.get(uri);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final status = data['status'] as String? ?? '';
+        final predictions = data['predictions'] as List<dynamic>? ?? [];
+        setState(() {
+          _suggestions = predictions
+              .map((p) => _PlaceSuggestion(
+                    placeId: p['place_id'] as String,
+                    mainText: (p['structured_formatting']?['main_text'] ?? p['description']) as String,
+                    secondaryText: (p['structured_formatting']?['secondary_text'] ?? '') as String,
+                  ))
+              .toList();
+          _showSuggestions = _suggestions.isNotEmpty;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _selectSuggestion(_PlaceSuggestion suggestion) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY_ANDROID'] ?? '';
+    // Fill in address text
+    final fullAddress = suggestion.secondaryText.isNotEmpty
+        ? '${suggestion.mainText}, ${suggestion.secondaryText}'
+        : suggestion.mainText;
+
+    _locationController.removeListener(_onAddressChanged);
+    _locationController.text = fullAddress;
+    _locationController.addListener(_onAddressChanged);
+
+    setState(() { _suggestions = []; _showSuggestions = false; });
+    _addressFocusNode.unfocus();
+
+    // Fetch lat/lng from Place Details
+    try {
+      final url = 'https://maps.googleapis.com/maps/api/place/details/json'
+          '?place_id=${suggestion.placeId}'
+          '&fields=geometry'
+          '&key=$apiKey';
+      final response = await http.get(Uri.parse(url));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final loc  = data['result']?['geometry']?['location'];
+        if (loc != null) {
+          final lat = (loc['lat'] as num).toDouble();
+          final lng = (loc['lng'] as num).toDouble();
+          setState(() {
+            _selectedLatitude  = lat;
+            _selectedLongitude = lng;
+            _currentMapPosition = LatLng(lat, lng);
+          });
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(LatLng(lat, lng), 17.0),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── Location — now uses LocationService ───────────────────────────────────
+
+  Future<void> _initLocation() async {
+    final position = await LocationService.getCurrentPosition();
+    if (position == null || !mounted) return;
+    setState(() {
+      _hasLocationPermission  = true;
+      _selectedLatitude       = position.latitude;
+      _selectedLongitude      = position.longitude;
+      _currentMapPosition     = LatLng(position.latitude, position.longitude);
+    });
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
+    );
+  }
+
+  Future<void> _getCurrentLocation() async {
+    AppUI.showSnackBar(context, 'Getting current location…');
+    final position = await LocationService.getCurrentPosition();
+    if (!mounted) return;
+
+    if (position == null) {
+      AppUI.replaceSnackBar(context, 'Could not get location. Check permissions.',
+          isError: true);
+      return;
+    }
+
+    setState(() {
+      _hasLocationPermission  = true;
+      _selectedLatitude       = position.latitude;
+      _selectedLongitude      = position.longitude;
+      _currentMapPosition     = LatLng(position.latitude, position.longitude);
+    });
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
+    );
+    AppUI.replaceSnackBar(
+      context,
+      'Location found! Lat: ${_selectedLatitude!.toStringAsFixed(4)}…',
+    );
+  }
+
+  // ── Time picker ───────────────────────────────────────────────────────────
 
   Future<void> _selectTime(bool isOpen) async {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
       builder: (context, child) => MediaQuery(
-        // Force 24-hour format regardless of device locale
         data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
         child: Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: _C.mint,
+              primary: AppColors.mint,
               onPrimary: Colors.white,
-              surface: _C.bg,
+              surface: AppColors.bg,
             ),
           ),
           child: child!,
         ),
       ),
     );
-    if (picked != null) setState(() => isOpen ? openTime = picked : closeTime = picked);
+    if (picked != null) {
+      setState(() => isOpen ? openTime = picked : closeTime = picked);
+    }
   }
 
-  /// Format TimeOfDay as HH:mm (24-hour) — e.g. "08:30", "14:00"
   String _formatTime24(TimeOfDay time) {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m';
   }
 
-  Future<void> _getCurrentLocation() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text("Getting current location..."),
-        backgroundColor: _C.mint,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadiusGeometry.circular(12)),
-      )
-    );
-
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if(!serviceEnabled) throw Exception("Location services are disabled.");
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if(permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if(permission == LocationPermission.denied) {
-          throw Exception('Location permissions are denied');
-        }
-      }
-      if(permission == LocationPermission.deniedForever) {
-        throw Exception("Location permissions are permanently denied.");
-      }
-
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        )
-      );
-
-      setState(() {
-        _selectedLatitude = position.latitude;
-        _selectedLongitude = position.longitude;
-
-        _currentMapPosition = LatLng(position.latitude, position.longitude);
-      });
-
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(_currentMapPosition, 16.0),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Location found! Lat: ${_selectedLatitude!.toStringAsFixed(4)}...'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: _C.pink,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
+  // ── Submit ────────────────────────────────────────────────────────────────
 
   Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      HapticFeedback.mediumImpact();
+    if (_isSubmitting) return;
+    if (!_formKey.currentState!.validate()) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _isSubmitting = true);
 
-      if (_selectedLatitude == null || _selectedLongitude == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please set the restroom location first.'),
-            backgroundColor: _C.pink,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-        return; // หยุดการทำงานถ้ายังไม่มีพิกัด
+    if (_selectedLatitude == null || _selectedLongitude == null) {
+      AppUI.showSnackBar(
+          context, 'Please set the restroom location on the map first.',
+          isError: true);
+      return;
+    }
+
+    final User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      AppUI.showSnackBar(context, 'Please login to submit a restroom.',
+          isError: true);
+      return;
+    }
+
+    AppUI.showSnackBar(context, 'Submitting request…');
+
+    try {
+      final docRef      = FirebaseFirestore.instance.collection('requests').doc();
+      final tempId      = docRef.id;
+      final generatedId = FirebaseFirestore.instance.collection('restrooms').doc().id;
+
+      List<String> uploadedUrls = [];
+      if (_localPhotos.isNotEmpty) {
+        setState(() => _isUploadingPhotos = true);
+        uploadedUrls = await _uploadPhotos(tempId);
+        setState(() => _isUploadingPhotos = false);
       }
 
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-      if(currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("Please login to submit a restroom."),
-            backgroundColor: _C.pink,
-            behavior: SnackBarBehavior.floating,
-          )
-        );
-        return ;
-      }
-      
-      final String currentUserId = currentUser.uid;
-      // แสดง SnackBar แจ้งว่ากำลังโหลด
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Submitting request...'),
-          backgroundColor: _C.mint,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+      final newRestroom = RestroomModel(
+        restroomId:   generatedId,
+        restroomName: _nameController.text,
+        address:      _locationController.text,
+        latitude:     _selectedLatitude!,
+        longitude:    _selectedLongitude!,
+        openTime:     openTime  != null ? _formatTime24(openTime!)  : null,
+        closeTime:    closeTime != null ? _formatTime24(closeTime!) : null,
+        isFree:       isFree,
+        price:        isFree ? null : double.tryParse(_priceController.text.trim()),
+        is24hrs:      is24Hours,
+        phoneNumber:  _phoneController.text,
+        amenities:    _amenities,
+        photos:       uploadedUrls,
+        createdBy:    currentUser.uid,
       );
 
-      try {
-        // 1. นำข้อมูลจากฟอร์มมาสร้างเป็น RestroomModel ก่อน
-        // Pre-generate a doc ID so we can use it for Storage paths
-        final docRef = FirebaseFirestore.instance.collection('requests').doc();
-        final tempId = docRef.id;
-        final String generatedId = FirebaseFirestore.instance.collection('restrooms').doc().id;
+      final newRequest = RequestModel(
+        requestId: tempId,
+        restroom:  newRestroom,
+        userId:    currentUser.uid,
+        createdAt: DateTime.now(),
+      );
 
-        // Upload photos to Firebase Storage (if any)
-        List<String> uploadedUrls = [];
-        if (_localPhotos.isNotEmpty) {
-          setState(() => _isUploadingPhotos = true);
-          uploadedUrls = await _uploadPhotos(tempId);
-          setState(() => _isUploadingPhotos = false);
-        }
+      await RequestService().createRequest(newRequest);
 
-        final newRestroom = RestroomModel(
-          restroomId: generatedId,
-          restroomName: _nameController.text,
-          address: _locationController.text,
-          latitude: _selectedLatitude!,
-          longitude: _selectedLongitude!,
-          openTime: openTime != null ? _formatTime24(openTime!) : null,
-          closeTime: closeTime != null ? _formatTime24(closeTime!) : null,
-          isFree: isFree,
-          is24hrs: is24Hours,
-          phoneNumber: _phoneController.text,
-          amenities: _amenities,
-          photos: uploadedUrls,   // real Firebase Storage URLs
-          createdBy: currentUserId,
-        );
-
-        // 2. นำ RestroomModel มาห่อด้วย RequestModel อีกชั้น
-        final newRequest = RequestModel(
-          requestId: tempId,
-          restroom: newRestroom,
-          userId: currentUserId,
-          createdAt: Timestamp.now(),
-        );
-
-        // 3. ส่งข้อมูลขึ้น Firestore ผ่าน RequestService
-        await RequestService().createRequest(newRequest);
-
-        // 4. บันทึกสำเร็จ ให้เด้งกลับไปหน้าก่อนหน้า
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Request sent to admin successfully!'),
-              backgroundColor: Colors.green, 
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-          Navigator.pop(context);
-        }
-      } catch (e) {
-        print("Error submitting request: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Failed to submit request. Please try again.'),
-              backgroundColor: _C.pink,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-        }
+      if (mounted) {
+        AppUI.replaceSnackBar(context, 'Request sent to admin successfully!',
+            icon: Icons.check_circle_rounded);
+        Navigator.pop(context);
       }
+    } catch (e) {
+      debugPrint('AddNewRestroomPage._submitForm error: $e');
+      if (mounted) {
+        AppUI.replaceSnackBar(context, 'Failed to submit request. Please try again.',
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
+
+  // ── Photo helpers ─────────────────────────────────────────────────────────
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(
+        source: source, imageQuality: 80, maxWidth: 1200, maxHeight: 1200);
+    if (picked == null) return;
+    setState(() => _localPhotos.add(File(picked.path)));
+  }
+
+  void _removePhoto(int index) => setState(() => _localPhotos.removeAt(index));
+
+  Future<List<String>> _uploadPhotos(String requestId) async {
+    final urls = <String>[];
+    for (final file in _localPhotos) {
+      final fileName =
+          'requests/$requestId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final ref  = FirebaseStorage.instance.ref().child(fileName);
+      final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+      urls.add(await task.ref.getDownloadURL());
+    }
+    return urls;
+  }
+
+  void _showPhotoSourceSheet() {
+    showPhotoSourceSheet(
+      context,
+      title: 'Add Photo',
+      subtitle: 'Add photos of the restroom',
+      onCamera:  () => _pickPhoto(ImageSource.camera),
+      onGallery: () => _pickPhoto(ImageSource.gallery),
+    );
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: _C.bg,
+        backgroundColor: AppColors.bg,
         body: FadeTransition(
           opacity: _fadeAnim,
           child: SlideTransition(
@@ -371,10 +402,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             child: CustomScrollView(
               physics: const ClampingScrollPhysics(),
               slivers: [
-                // ── Hero header ────────────────────────────
                 SliverToBoxAdapter(child: _buildHeroHeader(context)),
-
-                // ── Form body ──────────────────────────────
                 SliverToBoxAdapter(
                   child: Form(
                     key: _formKey,
@@ -403,11 +431,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
 
                           _sectionLabel('Address'),
                           const SizedBox(height: 10),
-                          _styledField(
-                            controller: _locationController,
-                            hint: 'e.g. Kasetsart University, Bangkok',
-                            icon: Icons.location_on_rounded,
-                          ),
+                          _addressFieldWithAutocomplete(),
                           const SizedBox(height: 20),
 
                           _sectionLabel('Phone Number'),
@@ -423,6 +447,49 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                           _sectionLabel('Price'),
                           const SizedBox(height: 12),
                           _priceToggle(),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            child: isFree
+                                ? const SizedBox.shrink()
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: TextFormField(
+                                      controller: _priceController,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+                                      validator: (v) {
+                                        if (isFree) return null;
+                                        if (v == null || v.trim().isEmpty) return 'Please enter a price';
+                                        if (double.tryParse(v.trim()) == null) return 'Enter a valid number';
+                                        return null;
+                                      },
+                                      decoration: InputDecoration(
+                                        hintText: '0.00',
+                                        hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
+                                        prefixIcon: Padding(
+                                          padding: const EdgeInsets.only(left: 14, right: 10),
+                                          child: const Icon(Icons.paid_rounded, size: 18, color: AppColors.pink),
+                                        ),
+                                        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                                        prefix: const Text('฿ ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.pink)),
+                                        filled: true,
+                                        fillColor: AppColors.fieldFill,
+                                        border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                                        enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                                        focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                            borderSide: const BorderSide(color: AppColors.pink, width: 2)),
+                                        errorBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                            borderSide: const BorderSide(color: AppColors.pink, width: 2)),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                      ),
+                                    ),
+                                  ),
+                          ),
                           const SizedBox(height: 24),
 
                           _sectionLabel('Opening Hours'),
@@ -454,183 +521,96 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     );
   }
 
-  // ── Hero header with back button ──────────────────────────────────────
+  // ── Section builders ──────────────────────────────────────────────────────
+
   Widget _buildHeroHeader(BuildContext context) {
     return Stack(
       children: [
-        // Background image placeholder
         Container(
           height: 220,
           width: double.infinity,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [_C.mint, _C.mintDark],
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [AppColors.mint, AppColors.mintDark],
             ),
           ),
-          child: Stack(
-            children: [
-              // Center icon
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add_location_alt_rounded,
-                        size: 36,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Add New Restroom',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Help others find clean restrooms nearby',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.8),
-                      ),
-                    ),
-                  ],
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 72, height: 72,
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18), shape: BoxShape.circle),
+                  child: const Icon(Icons.add_location_alt_rounded,
+                      size: 36, color: Colors.white),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                const Text('Add New Restroom',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+                        color: Colors.white, letterSpacing: 0.2)),
+                const SizedBox(height: 4),
+                Text('Help others find clean restrooms nearby',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.white.withOpacity(0.8))),
+              ],
+            ),
           ),
         ),
-
-        // ── Back button — same style as RestroomDetailPage ──
         Positioned(
-          top: 40,
-          left: 6,
-          child: SafeArea(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  Navigator.pop(context);
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.arrow_back, size: 24, color: _C.textDark),
-                ),
-              ),
-            ),
-          ),
+          top: 40, left: 6,
+          child: const SafeArea(child: AppBackButton()),
         ),
       ],
     );
   }
 
-  // ── Section label ─────────────────────────────────────────────────────
-  Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-        color: _C.textDark,
-        letterSpacing: 0.2,
-      ),
-    );
-  }
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+            fontSize: 14, fontWeight: FontWeight.w700,
+            color: AppColors.textDark, letterSpacing: 0.2),
+      );
 
-  // ── Map preview ───────────────────────────────────────────────────────
   Widget _mapPreview() {
     return Container(
       width: double.infinity,
-      height: 200, 
+      height: 200,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
+            blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // 1. ตัวแผนที่ Google Map
             GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _currentMapPosition,
-                zoom: 16.0,
-              ),
-              onMapCreated: (controller) => _mapController = controller,
-              // เมื่อผู้ใช้เลื่อนแผนที่ ให้อัปเดตตำแหน่งปัจจุบัน
-              onCameraMove: (position) {
-                _currentMapPosition = position.target;
-              },
-              // เมื่อผู้ใช้หยุดเลื่อนแผนที่ ให้บันทึกพิกัดลงตัวแปรที่จะส่งฟอร์ม
-              onCameraIdle: () {
-                setState(() {
-                  _selectedLatitude = _currentMapPosition.latitude;
-                  _selectedLongitude = _currentMapPosition.longitude;
-                });
-              },
+              initialCameraPosition:
+                  CameraPosition(target: _currentMapPosition, zoom: 16.0),
+              onMapCreated: (c) => _mapController = c,
+              onCameraMove: (p) => _currentMapPosition = p.target,
+              onCameraIdle: () => setState(() {
+                _selectedLatitude  = _currentMapPosition.latitude;
+                _selectedLongitude = _currentMapPosition.longitude;
+              }),
               zoomControlsEnabled: false,
               myLocationEnabled: _hasLocationPermission,
               myLocationButtonEnabled: false,
-              // Allow map gestures to win over the parent ScrollView
               gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                Factory<EagerGestureRecognizer>(
-                  () => EagerGestureRecognizer(),
-                ),
+                Factory<EagerGestureRecognizer>(() => EagerGestureRecognizer()),
               },
             ),
-            
-            // 2. หมุดตรงกลาง (จะอยู่กับที่เสมอขณะที่แผนที่ขยับ)
             const Padding(
-              padding: EdgeInsets.only(bottom: 24), // ดันขึ้นนิดนึงให้ปลายหมุดแตะตรงกลางพอดี
-              child: Icon(
-                Icons.location_on_rounded, 
-                size: 40, 
-                color: _C.pink,
-              ),
+              padding: EdgeInsets.only(bottom: 24),
+              child: Icon(Icons.location_on_rounded, size: 40, color: AppColors.pink),
             ),
-            
-            // 3. จุดวงกลมเงาใต้หมุด (เพื่อความสวยงาม)
             Container(
-              width: 10,
-              height: 10,
+              width: 10, height: 10,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.2),
-                shape: BoxShape.circle,
-              ),
+                  color: Colors.black.withOpacity(0.2), shape: BoxShape.circle),
             ),
           ],
         ),
@@ -638,51 +618,35 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     );
   }
 
-  // ── Use current location button ───────────────────────────────────────
   Widget _useLocationButton() {
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        _getCurrentLocation();
-      },
+      onTap: () { HapticFeedback.lightImpact(); _getCurrentLocation(); },
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 30, height: 30,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_C.orange.withOpacity(0.25), _C.orange.withOpacity(0.1)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              gradient: LinearGradient(colors: [
+                AppColors.orange.withOpacity(0.25),
+                AppColors.orange.withOpacity(0.1)
+              ], begin: Alignment.topLeft, end: Alignment.bottomRight),
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _C.orange.withOpacity(0.15),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: AppColors.orange.withOpacity(0.15),
+                  blurRadius: 4, offset: const Offset(0, 2))],
             ),
-            child: const Icon(Icons.my_location_rounded, size: 15, color: _C.orange),
+            child: const Icon(Icons.my_location_rounded,
+                size: 15, color: AppColors.orange),
           ),
           const SizedBox(width: 8),
-          const Text(
-            'Use Current Location',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: _C.orange,
-            ),
-          ),
+          const Text('Use Current Location',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+                  color: AppColors.orange)),
         ],
       ),
     );
   }
 
-  // ── Styled text field ─────────────────────────────────────────────────
   Widget _styledField({
     required TextEditingController controller,
     required String hint,
@@ -694,182 +658,112 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       controller: controller,
       keyboardType: keyboardType,
       validator: validator,
-      style: const TextStyle(fontSize: 14, color: _C.textDark),
+      style: const TextStyle(fontSize: 14, color: AppColors.textDark),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(fontSize: 13, color: _C.textLight),
+        hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
         prefixIcon: Padding(
           padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(icon, size: 18, color: _C.mint),
+          child: Icon(icon, size: 18, color: AppColors.mint),
         ),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
         filled: true,
-        fillColor: _C.fieldFill,
+        fillColor: AppColors.fieldFill,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
+            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
+            borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _C.mint, width: 2),
-        ),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppColors.mint, width: 2)),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _C.pink, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppColors.pink, width: 2)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
     );
   }
 
-  // ── Price toggle ──────────────────────────────────────────────────────
-  Widget _priceToggle() {
-    return Row(
-      children: [
-        _toggleChip(
-          label: 'Free',
-          icon: Icons.money_off_rounded,
-          selected: isFree,
-          onTap: () => setState(() => isFree = true),
-          activeColor: _C.mint,
-        ),
-        const SizedBox(width: 12),
-        _toggleChip(
-          label: 'Paid',
-          icon: Icons.paid_rounded,
-          selected: !isFree,
-          onTap: () => setState(() => isFree = false),
-          activeColor: _C.pink,
-        ),
-      ],
-    );
-  }
+  Widget _priceToggle() => Row(children: [
+    _toggleChip(label: 'Free',  icon: Icons.money_off_rounded,
+        selected: isFree,  onTap: () => setState(() => isFree = true),
+        activeColor: AppColors.mint),
+    const SizedBox(width: 12),
+    _toggleChip(label: 'Paid',  icon: Icons.paid_rounded,
+        selected: !isFree, onTap: () => setState(() => isFree = false),
+        activeColor: AppColors.pink),
+  ]);
 
   Widget _toggleChip({
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-    required Color activeColor,
+    required String label, required IconData icon,
+    required bool selected, required VoidCallback onTap, required Color activeColor,
   }) {
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
+      onTap: () { HapticFeedback.selectionClick(); onTap(); },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
         decoration: BoxDecoration(
-          gradient: selected
-              ? LinearGradient(
-                  colors: [activeColor.withOpacity(0.22), activeColor.withOpacity(0.08)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          color: selected ? null : _C.fieldFill,
+          gradient: selected ? LinearGradient(colors: [
+            activeColor.withOpacity(0.22), activeColor.withOpacity(0.08)
+          ], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
+          color: selected ? null : AppColors.fieldFill,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: activeColor.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
+          boxShadow: selected ? [BoxShadow(color: activeColor.withOpacity(0.2),
+              blurRadius: 8, offset: const Offset(0, 3))] : null,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: selected ? activeColor : _C.textLight),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: selected ? activeColor : _C.textMid,
-              ),
-            ),
-          ],
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16,
+              color: selected ? activeColor : AppColors.textLight),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+              color: selected ? activeColor : AppColors.textMid)),
+        ]),
       ),
     );
   }
 
-  // ── Hours section ─────────────────────────────────────────────────────
   Widget _hoursSection(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 24 hrs toggle
         GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
             setState(() => is24Hours = !is24Hours);
           },
-          child: Row(
-            children: [
-              AnimatedContainer(
+          child: Row(children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 46, height: 26,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                gradient: is24Hours ? const LinearGradient(
+                    colors: [AppColors.mint, AppColors.mintDark],
+                    begin: Alignment.centerLeft, end: Alignment.centerRight) : null,
+                color: is24Hours ? null : AppColors.divider,
+                boxShadow: is24Hours ? [BoxShadow(color: AppColors.mint.withOpacity(0.3),
+                    blurRadius: 6, offset: const Offset(0, 2))] : null,
+              ),
+              child: AnimatedAlign(
                 duration: const Duration(milliseconds: 200),
-                width: 46,
-                height: 26,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(99),
-                  gradient: is24Hours
-                      ? LinearGradient(
-                          colors: [_C.mint, _C.mintDark],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        )
-                      : null,
-                  color: is24Hours ? null : _C.divider,
-                  boxShadow: is24Hours
-                      ? [
-                          BoxShadow(
-                            color: _C.mint.withOpacity(0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: AnimatedAlign(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  alignment: is24Hours ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
+                curve: Curves.easeOut,
+                alignment: is24Hours ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
                     margin: const EdgeInsets.all(3),
-                    width: 18,
-                    height: 18,
+                    width: 18, height: 18,
                     decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
+                        color: Colors.white, shape: BoxShape.circle)),
               ),
-              const SizedBox(width: 10),
-              Text(
-                'Open 24 hours',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: is24Hours ? _C.mint : _C.textMid,
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            Text('Open 24 hours',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                    color: is24Hours ? AppColors.mint : AppColors.textMid)),
+          ]),
         ),
-
-        // Open / Close time pickers
         AnimatedSize(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
@@ -877,13 +771,15 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
               ? const SizedBox.shrink()
               : Padding(
                   padding: const EdgeInsets.only(top: 14),
-                  child: Row(
-                    children: [
-                      Expanded(child: _timePicker('Open', openTime, () => _selectTime(true))),
-                      const SizedBox(width: 12),
-                      Expanded(child: _timePicker('Close', closeTime, () => _selectTime(false))),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Expanded(
+                        child: _timePicker('Open', openTime,
+                            () => _selectTime(true))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: _timePicker('Close', closeTime,
+                            () => _selectTime(false))),
+                  ]),
                 ),
         ),
       ],
@@ -896,41 +792,26 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: _C.fieldFill,
+          color: AppColors.fieldFill,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+              blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        child: Row(
-          children: [
-            Icon(Icons.access_time_rounded, size: 16, color: _C.mint),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(fontSize: 10, color: _C.textLight)),
-                Text(
-                  time != null ? _formatTime24(time) : '--:--',
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: _C.textDark),
-                ),
-              ],
-            ),
-          ],
-        ),
+        child: Row(children: [
+          const Icon(Icons.access_time_rounded, size: 16, color: AppColors.mint),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
+            Text(time != null ? _formatTime24(time) : '--:--',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+                    color: AppColors.textDark)),
+          ]),
+        ]),
       ),
     );
   }
 
-  // ── Amenities grid ────────────────────────────────────────────────────
   Widget _amenitiesGrid() {
     final entries = _amenities.entries.toList();
     return GridView.builder(
@@ -938,11 +819,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       shrinkWrap: true,
       itemCount: entries.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 3.0,
-      ),
+          crossAxisCount: 2, crossAxisSpacing: 10,
+          mainAxisSpacing: 10, childAspectRatio: 3.0),
       itemBuilder: (context, i) {
         final key   = entries[i].key;
         final value = entries[i].value;
@@ -957,282 +835,239 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
             curve: Curves.easeOut,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              gradient: value
-                  ? LinearGradient(
-                      colors: [_C.pinkLight, _C.pink.withOpacity(0.15)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    )
-                  : null,
-              color: value ? null : _C.fieldFill,
+              gradient: value ? LinearGradient(
+                  colors: [AppColors.pinkLight, AppColors.pink.withOpacity(0.15)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
+              color: value ? null : AppColors.fieldFill,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: value
-                  ? [
-                      BoxShadow(
-                        color: _C.pink.withOpacity(0.15),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
+              boxShadow: value ? [BoxShadow(color: AppColors.pink.withOpacity(0.15),
+                  blurRadius: 4, offset: const Offset(0, 2))] : null,
             ),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: value ? _C.pink : _C.textLight,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    key,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: value ? _C.textDark : _C.textLight,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (value)
-                  const Icon(Icons.check_rounded, size: 14, color: _C.pink),
-              ],
-            ),
+            child: Row(children: [
+              Icon(icon, size: 16,
+                  color: value ? AppColors.pink : AppColors.textLight),
+              const SizedBox(width: 8),
+              Expanded(child: Text(key,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                      color: value ? AppColors.textDark : AppColors.textLight),
+                  maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (value) const Icon(Icons.check_rounded,
+                  size: 14, color: AppColors.pink),
+            ]),
           ),
         );
       },
     );
   }
 
-  // ── Photo picker helpers ─────────────────────────────────────────
-  void _showPhotoSourceSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _C.bg,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: _C.divider, borderRadius: BorderRadius.circular(99))),
-            const SizedBox(height: 16),
-            const Text('Add Photo',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.textDark)),
-            const SizedBox(height: 4),
-            const Text('Add photos of the restroom',
-                style: TextStyle(fontSize: 12, color: _C.textMid)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _PhotoSourceBtn(
-                  icon: Icons.camera_alt_rounded,
-                  label: 'Camera',
-                  color: _C.mint,
-                  onTap: () { Navigator.pop(ctx); _pickPhoto(ImageSource.camera); },
-                ),
-                _PhotoSourceBtn(
-                  icon: Icons.photo_library_rounded,
-                  label: 'Gallery',
-                  color: _C.orange,
-                  onTap: () { Navigator.pop(ctx); _pickPhoto(ImageSource.gallery); },
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickPhoto(ImageSource source) async {
-    final picker = ImagePicker();
-    final XFile? picked = await picker.pickImage(
-      source: source,
-      imageQuality: 80,
-      maxWidth: 1200,
-      maxHeight: 1200,
-    );
-    if (picked == null) return;
-    setState(() => _localPhotos.add(File(picked.path)));
-  }
-
-  void _removePhoto(int index) {
-    setState(() => _localPhotos.removeAt(index));
-  }
-
-  Future<List<String>> _uploadPhotos(String requestId) async {
-    final urls = <String>[];
-    for (final file in _localPhotos) {
-      final fileName = 'requests/$requestId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = FirebaseStorage.instance.ref().child(fileName);
-      final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-      urls.add(await task.ref.getDownloadURL());
-    }
-    return urls;
-  }
-
-  // ── Photo row ─────────────────────────────────────────────────────────
   Widget _photoRow() {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 10, runSpacing: 10,
       children: [
-        // Local photo previews with remove button
-        ..._localPhotos.asMap().entries.map((e) {
-          final i = e.key;
-          final file = e.value;
-          return Stack(
-            children: [
-              Container(
-                width: 72, height: 72,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  color: _C.pinkLight.withOpacity(0.3),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Image.file(file, fit: BoxFit.cover),
-                ),
+        ..._localPhotos.asMap().entries.map((e) => Stack(children: [
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: AppColors.pinkLight.withOpacity(0.3)),
+            child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.file(e.value, fit: BoxFit.cover)),
+          ),
+          Positioned(
+            top: 2, right: 2,
+            child: GestureDetector(
+              onTap: () => _removePhoto(e.key),
+              child: Container(
+                width: 20, height: 20,
+                decoration: const BoxDecoration(
+                    color: Colors.white, shape: BoxShape.circle),
+                child: const Icon(Icons.close_rounded,
+                    size: 13, color: Colors.red),
               ),
-              Positioned(
-                top: 2, right: 2,
-                child: GestureDetector(
-                  onTap: () => _removePhoto(i),
-                  child: Container(
-                    width: 20, height: 20,
-                    decoration: const BoxDecoration(
-                      color: Colors.white, shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.close_rounded, size: 13, color: Colors.red),
-                  ),
-                ),
-              ),
-            ],
-          );
-        }),
-
-        // Add photo button
+            ),
+          ),
+        ])),
         GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            _showPhotoSourceSheet();
-          },
+          onTap: () { HapticFeedback.lightImpact(); _showPhotoSourceSheet(); },
           child: Container(
             width: 72, height: 72,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [_C.mint.withOpacity(0.15), _C.mint.withOpacity(0.05)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-              ),
+                  colors: [AppColors.mint.withOpacity(0.15),
+                    AppColors.mint.withOpacity(0.05)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight),
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(color: _C.mint.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 3)),
-              ],
+              boxShadow: [BoxShadow(color: AppColors.mint.withOpacity(0.15),
+                  blurRadius: 8, offset: const Offset(0, 3))],
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.add_photo_alternate_rounded, size: 26, color: _C.mint),
-                SizedBox(height: 4),
-                Text('Add', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _C.mint)),
-              ],
-            ),
+            child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.add_photo_alternate_rounded,
+                  size: 26, color: AppColors.mint),
+              SizedBox(height: 4),
+              Text('Add', style: TextStyle(fontSize: 10,
+                  fontWeight: FontWeight.w600, color: AppColors.mint)),
+            ]),
           ),
         ),
       ],
     );
   }
 
-  // ── Submit button ─────────────────────────────────────────────────────
-  Widget _submitButton() {
-    return _SpringButton(
-      onTap: _submitForm,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 17),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_C.mint, _C.mintDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: _C.mint.withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Text(
-            'Submit Restroom',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+  // ── Address field with Places Autocomplete dropdown ─────────────────────
 
-// ─────────────────────────────────────────────
-// Photo source button (Camera / Gallery)
-// ─────────────────────────────────────────────
-class _PhotoSourceBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _PhotoSourceBtn({required this.icon, required this.label, required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 130,
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color.withOpacity(0.18), color.withOpacity(0.08)],
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: color.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52, height: 52,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [color.withOpacity(0.25), color.withOpacity(0.12)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                ),
+  Widget _addressFieldWithAutocomplete() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _locationController,
+          focusNode: _addressFocusNode,
+          style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+          decoration: InputDecoration(
+            hintText: 'e.g. Kasetsart University, Bangkok',
+            hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 14, right: 10),
+              child: const Icon(Icons.location_on_rounded, size: 18, color: AppColors.mint),
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+            suffixIcon: _locationController.text.isNotEmpty
+                ? GestureDetector(
+                    onTap: () {
+                      _locationController.clear();
+                      setState(() { _suggestions = []; _showSuggestions = false; });
+                    },
+                    child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textLight),
+                  )
+                : null,
+            filled: true,
+            fillColor: AppColors.fieldFill,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: color.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 3))],
-              ),
-              child: Icon(icon, size: 26, color: color),
+                borderSide: const BorderSide(color: AppColors.mint, width: 2)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+        // Dropdown suggestions
+        if (_showSuggestions && _suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.10),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-          ],
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Column(
+                children: _suggestions.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final s = entry.value;
+                  final isLast = i == _suggestions.length - 1;
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      _selectSuggestion(s);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: isLast ? null : Border(
+                          bottom: BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32, height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.mint.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.location_on_rounded,
+                                size: 16, color: AppColors.mint),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.mainText,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textDark,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (s.secondaryText.isNotEmpty)
+                                  Text(
+                                    s.secondaryText,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textLight,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.north_west_rounded,
+                              size: 14, color: AppColors.textLight),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _submitButton() {
+    return SpringButton(
+      onTap: _isSubmitting ? () {} : _submitForm,
+      child: AnimatedOpacity(
+        opacity: _isSubmitting ? 0.6 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+                colors: [AppColors.mint, AppColors.mintDark],
+                begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: AppColors.mint.withOpacity(0.4),
+                blurRadius: 20, offset: const Offset(0, 8))],
+          ),
+          child: Center(
+            child: _isSubmitting
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Submit Restroom',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+                        color: Colors.white, letterSpacing: 0.3)),
+          ),
         ),
       ),
     );
@@ -1240,74 +1075,15 @@ class _PhotoSourceBtn extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-// Spring press button wrapper
+// Places Autocomplete data model
 // ─────────────────────────────────────────────
-class _SpringButton extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  const _SpringButton({required this.child, required this.onTap});
-
-  @override
-  State<_SpringButton> createState() => _SpringButtonState();
-}
-
-class _SpringButtonState extends State<_SpringButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 220),
-    );
-    _scale = Tween(begin: 1.0, end: 0.96).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeIn),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scale,
-        builder: (_, child) => Transform.scale(scale: _scale.value, child: child),
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Map grid painter (decorative)
-// ─────────────────────────────────────────────
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFA8D5D5).withOpacity(0.25)
-      ..strokeWidth = 1;
-    const step = 28.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
+class _PlaceSuggestion {
+  final String placeId;
+  final String mainText;       // e.g. "Kasetsart University"
+  final String secondaryText; // e.g. "Bangkok, Thailand"
+  const _PlaceSuggestion({
+    required this.placeId,
+    required this.mainText,
+    required this.secondaryText,
+  });
 }

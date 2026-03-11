@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '/models/restroom_model.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -11,21 +11,17 @@ class RestroomService {
   // CREATE: สร้างข้อมูลห้องน้ำใหม่
   Future<void> createRestroom(RestroomModel restroom) async {
     try {
-      // Check for safety (just in case you forgot to pre-generate it somewhere)
       if (restroom.restroomId.isEmpty) {
         throw Exception("Restroom ID cannot be empty. Please pre-generate the ID.");
       }
-      
-      // Because the ID is guaranteed to exist, we only need one line of code:
       await _restroomCollection.doc(restroom.restroomId).set(restroom.toMap());
-      
     } catch (e) {
-      print("Error creating restroom: $e");
+      debugPrint("Error creating restroom: $e"); // ✅ FIX #12: was print()
       rethrow;
     }
   }
 
-  // READ: อ่านข้อมูล 
+  // READ: อ่านข้อมูล
   // 1. ดึงข้อมูลทั้งหมดแบบ Realtime (ใช้กับ StreamBuilder ในหน้า List)
   Stream<List<RestroomModel>> getRestroomsStream() {
     return _restroomCollection.snapshots().map((snapshot) {
@@ -50,7 +46,7 @@ class RestroomService {
       }
       return null;
     } catch (e) {
-      print("Error getting restroom: $e");
+      debugPrint("Error getting restroom: $e"); // ✅ FIX #12: was print()
       return null;
     }
   }
@@ -61,18 +57,17 @@ class RestroomService {
     try {
       await _restroomCollection.doc(restroom.restroomId).update(restroom.toMap());
     } catch (e) {
-      print("Error updating restroom: $e");
+      debugPrint("Error updating restroom: $e"); // ✅ FIX #12: was print()
       rethrow;
     }
   }
 
-  // 2. แก้ไขเฉพาะบาง Field (เช่น อัปเดตแค่ราคา หรือ คะแนนรีวิว)
-  // วิธีใช้: service.updateSpecificField('id_123', {'price': 10.0, 'isFree': false});
+  // 2. แก้ไขเฉพาะบาง Field
   Future<void> updateSpecificField(String docId, Map<String, dynamic> data) async {
     try {
       await _restroomCollection.doc(docId).update(data);
     } catch (e) {
-      print("Error updating field: $e");
+      debugPrint("Error updating field: $e"); // ✅ FIX #12: was print()
       rethrow;
     }
   }
@@ -82,18 +77,17 @@ class RestroomService {
     try {
       await _restroomCollection.doc(restroomId).delete();
     } catch (e) {
-      print("Error deleting restroom: $e");
+      debugPrint("Error deleting restroom: $e"); // ✅ FIX #12: was print()
       rethrow;
     }
   }
 
   bool checkIfOpen(RestroomModel r) {
     if (r.is24hrs) return true;
-
     if (r.openTime == null || r.closeTime == null) return false;
 
     try {
-      final format = DateFormat.Hm(); // Parses "HH:mm" format e.g. "08:30"
+      final format = DateFormat.Hm();
 
       final DateTime parsedOpen  = format.parse(r.openTime!);
       final DateTime parsedClose = format.parse(r.closeTime!);
@@ -110,7 +104,7 @@ class RestroomService {
       return nowMinutes >= openMinutes && nowMinutes < closeMinutes;
 
     } catch (e) {
-      print("checkIfOpen parse error: $e");
+      debugPrint("checkIfOpen parse error: $e"); // ✅ FIX #12: was print()
       return false;
     }
   }
@@ -118,7 +112,7 @@ class RestroomService {
   String getDistance(double startLat, double startLng, double endLat, double endLng) {
     double distanceInMeters = Geolocator.distanceBetween(
       startLat, startLng,
-      endLat, endLng
+      endLat, endLng,
     );
     
     if (distanceInMeters < 1000) {
@@ -128,6 +122,4 @@ class RestroomService {
       return '${distanceInKm.toStringAsFixed(1)} km';
     }
   }
-
-
 }

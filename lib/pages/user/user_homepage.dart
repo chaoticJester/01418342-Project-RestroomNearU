@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,27 +8,102 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/restroom_model.dart';
 import '../../services/restroom_firestore.dart';
 import '../../services/user_firestore.dart';
+import '../../services/location_service.dart';
+import '../../utils/app_ui.dart';
+import '../../widgets/chips.dart';
+import '../../widgets/spring_button.dart';
 import 'restroom_detail_page.dart';
 import 'navigation_page.dart';
-import 'package:geolocator/geolocator.dart';
+
+import '../../utils/app_colors.dart';
+// _C is aliased to AppColors — all _C.xxx references resolve to AppColors
+typedef _C = AppColors;
 
 // ─────────────────────────────────────────────
-// Design tokens
-// ─────────────────────────────────────────────/
-class _C {
-  static const bg         = Color(0xFFFCF9EA);
-  static const sheet      = Color(0xFFFAF7E8);
-  static const teal       = Color(0xFFBADFDB);
-  static const tealDark   = Color(0xFF7BBFBA);
-  static const orange     = Color(0xFFE8753D);
-  static const textDark   = Color(0xFF1C1B1F);
-  static const textMid    = Color(0xFF6B6874);
-  static const textLight  = Color(0xFFAEABB8);
-  static const openGreen  = Color(0xFF34A853);
-  static const closeRed   = Color(0xFFE53935);
-  static const divider    = Color(0xFFECE9DA);
-  static const pill       = Color(0xFFD8D4C4);
-  static const searchFill = Color(0xFFEEEBDA);
+// Clustering — grid-based, zoom-aware
+// ─────────────────────────────────────────────
+class _Cluster {
+  final List<RestroomModel> items;
+  final LatLng position; // centroid
+  _Cluster(this.items, this.position);
+  bool get isCluster => items.length > 1;
+}
+
+List<_Cluster> _buildClusters(List<RestroomModel> restrooms, double zoom) {
+  // cellSize in degrees: ~8m at zoom 18 (fine enough for campus buildings)
+  // doubles every zoom step out: zoom17=~16m, zoom15=~64m, zoom12=~500m
+  final cellSize = 0.00008 * math.pow(2, (18 - zoom).clamp(0, 22));
+  final Map<String, List<RestroomModel>> grid = {};
+  for (final r in restrooms) {
+    final key = '${(r.longitude / cellSize).floor()}:${(r.latitude / cellSize).floor()}';
+    grid.putIfAbsent(key, () => []).add(r);
+  }
+  return grid.values.map((items) {
+    final lat = items.map((r) => r.latitude).reduce((a, b) => a + b) / items.length;
+    final lng = items.map((r) => r.longitude).reduce((a, b) => a + b) / items.length;
+    return _Cluster(items, LatLng(lat, lng));
+  }).toList();
+}
+
+// ─────────────────────────────────────────────
+// Cluster icon renderer — iOS-style concentric rings
+// ─────────────────────────────────────────────
+Future<BitmapDescriptor> _renderClusterIcon(
+    int count, double dpr) async {
+  // Size scales with count: small=48, medium=56, large=64 dp
+  final double sizeDp = count < 10 ? 48 : count < 50 ? 56 : 64;
+  final double size = sizeDp * dpr;
+  final double cx = size / 2;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+
+  // Ring 3 — outermost, very faint
+  canvas.drawCircle(cx.asOffset, cx,
+      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.12));
+  // Ring 2 — mid
+  canvas.drawCircle(cx.asOffset, cx * 0.78,
+      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.22));
+  // Ring 1 — core fill
+  canvas.drawCircle(cx.asOffset, cx * 0.58,
+      Paint()..color = const Color(0xFF4AADA7));
+  // White inner border
+  canvas.drawCircle(
+    cx.asOffset, cx * 0.58,
+    Paint()
+      ..color = Colors.white.withOpacity(0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * dpr,
+  );
+
+  // Count label
+  final label = count > 99 ? '99+' : '$count';
+  final fontSize = count > 99 ? 10.0 : count > 9 ? 13.0 : 15.0;
+  final tp = TextPainter(
+    text: TextSpan(
+      text: label,
+      style: TextStyle(
+        fontSize: fontSize * dpr,
+        fontWeight: FontWeight.w800,
+        color: Colors.white,
+        letterSpacing: -0.3 * dpr,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  tp.paint(canvas, Offset(cx - tp.width / 2, cx - tp.height / 2));
+
+  final img = await recorder.endRecording()
+      .toImage(size.round(), size.round());
+  final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+  return BitmapDescriptor.fromBytes(
+    bytes!.buffer.asUint8List(),
+    size: Size(sizeDp, sizeDp),
+  );
+}
+
+extension _OffsetX on double {
+  Offset get asOffset => Offset(this, this);
 }
 
 // ─────────────────────────────────────────────
@@ -58,23 +134,23 @@ class _MarkerTier {
 const _tiers = [
   _MarkerTier(   // zoomed way out — tiny dot-like pin
     minZoom: 0,
-    cardDp: 14, borderDp: 2, radiusDp: 4,
+    cardDp: 18, borderDp: 2, radiusDp: 5,
     iconFontDp: 0, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
   ),
   _MarkerTier(   // medium zoom — card without pill
     minZoom: 13,
-    cardDp: 22, borderDp: 2, radiusDp: 6,
-    iconFontDp: 11, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
+    cardDp: 30, borderDp: 2.5, radiusDp: 8,
+    iconFontDp: 15, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
   ),
   _MarkerTier(   // close zoom — full card + rating pill
     minZoom: 15,
-    cardDp: 34, borderDp: 3, radiusDp: 8,
-    iconFontDp: 17, pillWDp: 26, pillHDp: 11, pillFontDp: 6,
+    cardDp: 42, borderDp: 3, radiusDp: 10,
+    iconFontDp: 22, pillWDp: 32, pillHDp: 13, pillFontDp: 7,
   ),
   _MarkerTier(   // very close — large card + pill
     minZoom: 17,
-    cardDp: 42, borderDp: 3, radiusDp: 10,
-    iconFontDp: 21, pillWDp: 31, pillHDp: 13, pillFontDp: 7,
+    cardDp: 52, borderDp: 3.5, radiusDp: 12,
+    iconFontDp: 26, pillWDp: 38, pillHDp: 15, pillFontDp: 8,
   ),
 ];
 
@@ -116,6 +192,9 @@ class _UserHomePageState extends State<UserHomePage>
   final Completer<GoogleMapController> _mapCompleter = Completer();
   final Map<MarkerId, Marker> _markers = {};
   RestroomModel? _selectedRestroom;
+
+  // Cluster rebuild generation — cancels stale async builds
+  int _rebuildGen = 0;
 
   // Zoom tracking + debounce
   double _currentZoom = _initialZoom;
@@ -181,7 +260,7 @@ class _UserHomePageState extends State<UserHomePage>
 
   void _onSearchChanged(String val) {
     setState(() => _searchQuery = val);
-    _buildAllMarkers();
+    _rebuildMarkers();
   }
 
   final Map<String, BitmapDescriptor> _bitmapCache = {};
@@ -193,7 +272,7 @@ class _UserHomePageState extends State<UserHomePage>
   @override
   void initState() {
     super.initState();
-    
+
     _listEntryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -211,13 +290,11 @@ class _UserHomePageState extends State<UserHomePage>
 
     _restroomSub = RestroomService().getRestroomsStream().listen((data) {
       if (mounted) {
-        setState(() {
-          restrooms = data;
-          if (_dprInitialized) _buildAllMarkers(); 
-        });
+        setState(() => restrooms = data);
+        _rebuildMarkers();
       }
     });
-    
+
     _loadFavorites();
     _checkLocationPermission();
   }
@@ -225,46 +302,37 @@ class _UserHomePageState extends State<UserHomePage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Get DPR safely from context
     final newDpr = MediaQuery.of(context).devicePixelRatio;
     if (!_dprInitialized || _dpr != newDpr) {
       _dpr = newDpr;
       _dprInitialized = true;
-      _buildAllMarkers();
+      _rebuildMarkers();
     }
   }
 
   Future<void> _checkLocationPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-    if (permission == LocationPermission.deniedForever) return;
-
-    if (mounted) {
+    final hasPermission = await LocationService.hasPermission();
+    if (hasPermission && mounted) {
       setState(() => _myLocationEnabled = true);
-      _goToCurrentLocation(); 
+      _goToCurrentLocation();
+    } else {
+      // Try requesting — getCurrentPosition handles the full flow
+      final position = await LocationService.getCurrentPosition();
+      if (position != null && mounted) {
+        setState(() => _myLocationEnabled = true);
+        final ctrl = await _mapCompleter.future;
+        ctrl.animateCamera(CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude), 16.5));
+      }
     }
   }
 
   Future<void> _goToCurrentLocation() async {
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high)
-      );
-
-      final GoogleMapController controller = await _mapCompleter.future;
-      controller.animateCamera(CameraUpdate.newLatLngZoom(
-        LatLng(position.latitude, position.longitude),
-        16.5,
-      ));
-    } catch (e) {
-      debugPrint("Error locating user: $e");
-    }
+    final position = await LocationService.getCurrentPosition();
+    if (position == null) return;
+    final ctrl = await _mapCompleter.future;
+    ctrl.animateCamera(CameraUpdate.newLatLngZoom(
+      LatLng(position.latitude, position.longitude), 16.5));
   }
 
   @override
@@ -279,61 +347,101 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   void _onCameraMove(CameraPosition pos) {
-    final newZoom = pos.zoom;
-    if ((newZoom - _currentZoom).abs() < 0.3) return; 
-    _currentZoom = newZoom;
-
+    // Always track current zoom — no threshold skip
+    _currentZoom = pos.zoom;
     _zoomDebounce?.cancel();
-    _zoomDebounce = Timer(const Duration(milliseconds: 120), () {
+    _zoomDebounce = Timer(const Duration(milliseconds: 150), () {
       final newTier = _tierForZoom(_currentZoom);
       if (newTier.minZoom != _currentTier.minZoom) {
         _currentTier = newTier;
-        _buildAllMarkers();
+        _bitmapCache.clear();
       }
+      _rebuildMarkers();
     });
   }
 
-  Future<void> _buildAllMarkers() async {
-    if (!_dprInitialized) return;
-    final Map<MarkerId, Marker> fresh = {};
-    for (final r in _filteredRestrooms) {
-      final isSelected = _selectedRestroom?.restroomId == r.restroomId;
-      final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
-      final id = MarkerId(r.restroomId);
-      fresh[id] = _makeMarker(r, icon);
+  void _onCameraIdle() {
+    // Final rebuild after animation ends (e.g. pinch-to-zoom)
+    _zoomDebounce?.cancel();
+    final newTier = _tierForZoom(_currentZoom);
+    if (newTier.minZoom != _currentTier.minZoom) {
+      _currentTier = newTier;
+      _bitmapCache.clear();
     }
-    if (mounted) setState(() { _markers
-      ..clear()
-      ..addAll(fresh); });
+    _rebuildMarkers();
   }
 
-  Future<void> _refreshSelectionMarkers({
+  void _rebuildMarkers() {
+    if (!mounted) return;
+    _rebuildGen++;
+    final gen = _rebuildGen;
+    final clusters = _buildClusters(_filteredRestrooms, _currentZoom);
+    _buildMarkersAsync(clusters, gen);
+  }
+
+  Future<void> _buildMarkersAsync(List<_Cluster> clusters, int gen) async {
+    final newMarkers = <MarkerId, Marker>{};
+
+    for (final cluster in clusters) {
+      if (gen != _rebuildGen) return; // newer build started, bail
+
+      if (cluster.isCluster) {
+        // iOS-style concentric ring bubble
+        final icon = await _renderClusterIcon(cluster.items.length, _dpr);
+        if (gen != _rebuildGen) return;
+        final mid = MarkerId('c_${cluster.position.latitude}_${cluster.position.longitude}');
+        newMarkers[mid] = Marker(
+          markerId: mid,
+          position: cluster.position,
+          icon: icon,
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 3.0,
+          onTap: () async {
+            HapticFeedback.lightImpact();
+            final ctrl = await _mapCompleter.future;
+            ctrl.animateCamera(
+              CameraUpdate.newLatLngZoom(cluster.position, _currentZoom + 2.5),
+            );
+          },
+        );
+      } else {
+        final r = cluster.items.first;
+        final isSelected = _selectedRestroom?.restroomId == r.restroomId;
+        final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
+        if (gen != _rebuildGen) return;
+        final mid = MarkerId(r.restroomId);
+        newMarkers[mid] = Marker(
+          markerId: mid,
+          position: LatLng(r.latitude, r.longitude),
+          icon: icon,
+          anchor: _currentTier.pillHDp > 0
+              ? const Offset(0.5, 0.60)
+              : const Offset(0.5, 0.5),
+          zIndex: isSelected ? 2.0 : 1.0,
+          onTap: () => _onMarkerTap(r),
+        );
+      }
+    }
+
+    if (mounted && gen == _rebuildGen) {
+      setState(() {
+        _markers
+          ..clear()
+          ..addAll(newMarkers);
+      });
+    }
+  }
+
+  void _refreshSelectionMarkers({
     RestroomModel? prev,
     RestroomModel? next,
-  }) async {
-    if (!_dprInitialized) return;
-    final updates = <MarkerId, Marker>{};
+  }) {
     for (final r in [prev, next]) {
       if (r == null) continue;
-      final isSelected = next?.restroomId == r.restroomId;
-      final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
-      final id = MarkerId(r.restroomId);
-      updates[id] = _makeMarker(r, icon);
+      _bitmapCache.remove('${r.restroomId}:${_currentTier.minZoom}:s');
+      _bitmapCache.remove('${r.restroomId}:${_currentTier.minZoom}:n');
     }
-    if (mounted) setState(() => _markers.addAll(updates));
-  }
-
-  Marker _makeMarker(RestroomModel r, BitmapDescriptor icon) {
-    return Marker(
-      markerId: MarkerId(r.restroomId),
-      position: LatLng(r.latitude, r.longitude),
-      icon: icon,
-      anchor: _currentTier.pillHDp > 0
-          ? const Offset(0.5, 0.60)
-          : const Offset(0.5, 0.5),
-      zIndex: _selectedRestroom?.restroomId == r.restroomId ? 1.0 : 0.0,
-      onTap: () => _onMarkerTap(r),
-    );
+    _rebuildMarkers();
   }
 
   Future<BitmapDescriptor> _iconForTier(
@@ -519,11 +627,15 @@ class _UserHomePageState extends State<UserHomePage>
               child: GoogleMap(
                 initialCameraPosition: _initialCamera,
                 zoomControlsEnabled: false,
-                myLocationEnabled: _myLocationEnabled, 
-                myLocationButtonEnabled: false,        
+                myLocationEnabled: _myLocationEnabled,
+                myLocationButtonEnabled: false,
                 markers: Set<Marker>.of(_markers.values),
-                onMapCreated: (ctrl) => _mapCompleter.complete(ctrl),
+                onMapCreated: (ctrl) {
+                  _mapCompleter.complete(ctrl);
+                  _rebuildMarkers();
+                },
                 onCameraMove: _onCameraMove,
+                onCameraIdle: _onCameraIdle,
                 onTap: (_) => _dismissPopup(),
               ),
             ),
@@ -539,14 +651,14 @@ class _UserHomePageState extends State<UserHomePage>
                   _dismissPopup();
                   Navigator.push(
                     context,
-                    _smoothRoute(RestroomDetailPage(restroom: _selectedRestroom!)),
+                    AppUI.smoothRoute(RestroomDetailPage(restroom: _selectedRestroom!)),
                   );
                 },
                 onGoNav: () {
                   _dismissPopup();
                   Navigator.push(
-                    context,
-                    _smoothRoute(NavigationPage(restroom: _selectedRestroom!)),
+                  context,
+                  AppUI.smoothRoute(NavigationPage(restroom: _selectedRestroom!)),
                   );
                 },
               ),
@@ -586,7 +698,10 @@ class _UserHomePageState extends State<UserHomePage>
                   onSearchChanged: _onSearchChanged,
                   searchController: _searchController,
                   activeTab: _activeTab,
-                  onTabChanged: (tab) => setState(() => _activeTab = tab),
+                  onTabChanged: (tab) {
+                    setState(() => _activeTab = tab);
+                    _rebuildMarkers();
+                  },
                   favoriteIds: _favoriteIds,
                   onToggleFavorite: _toggleFavorite,
                 );
@@ -696,19 +811,19 @@ class _MarkerPopup extends StatelessWidget {
                               ]),
                               const SizedBox(height: 8),
                               Row(children: [
-                                _MiniChip(
+                                MiniChip(
                                     icon: Icons.star_rounded,
                                     iconColor: _C.orange,
                                     label: restroom.avgRating.toStringAsFixed(1)),
                                 const SizedBox(width: 6),
-                                _MiniChip(
+                                MiniChip(
                                     icon: restroom.isFree
                                         ? Icons.money_off_rounded
                                         : Icons.paid_rounded,
                                     iconColor: _C.tealDark,
                                     label: restroom.isFree ? 'Free' : 'Paid'),
                                 const SizedBox(width: 6),
-                                _StatusBadge(isOpen: isOpen),
+                                StatusBadge(isOpen: isOpen),
                               ]),
                             ],
                           ),
@@ -1066,7 +1181,7 @@ class _RestroomCardState extends State<_RestroomCard>
       onTapCancel: () => _pressCtrl.reverse(),
       onTap: () {
         HapticFeedback.selectionClick();
-        Navigator.push(context, _smoothRoute(RestroomDetailPage(restroom: r)));
+        Navigator.push(context, AppUI.smoothRoute(RestroomDetailPage(restroom: r)));
       },
       child: AnimatedBuilder(
         animation: _scaleAnim,
@@ -1104,19 +1219,19 @@ class _RestroomCardState extends State<_RestroomCard>
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 7),
                 Row(children: [
-                  _MiniChip(
+                  MiniChip(
                       icon: Icons.star_rounded,
                       iconColor: _C.orange,
                       label: r.avgRating.toStringAsFixed(1)),
                   const SizedBox(width: 6),
-                  _MiniChip(
+                  MiniChip(
                       icon: r.isFree
                           ? Icons.money_off_rounded
                           : Icons.paid_rounded,
                       iconColor: _C.tealDark,
                       label: r.isFree ? 'Free' : 'Paid'),
                   const Spacer(),
-                  _StatusBadge(isOpen: isOpen),
+                  StatusBadge(isOpen: isOpen),
                 ]),
               ]),
             ),
@@ -1149,7 +1264,7 @@ class _RestroomCardState extends State<_RestroomCard>
                 HapticFeedback.mediumImpact();
                 Navigator.push(
                   context,
-                  _smoothRoute(NavigationPage(restroom: r)),
+                  AppUI.smoothRoute(NavigationPage(restroom: r)),
                 );
               },
               child: Container(
@@ -1367,195 +1482,74 @@ class _FilterTabBarState extends State<_FilterTabBar>
   }
 }
 
-class _MiniChip extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String label;
-  const _MiniChip({required this.icon, required this.iconColor, required this.label});
+// MiniChip and StatusBadge are now in widgets/app_chips.dart
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-          color: _C.searchFill, borderRadius: BorderRadius.circular(8)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: iconColor, size: 12),
-        const SizedBox(width: 3),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w600, color: _C.textDark)),
-      ]),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final bool isOpen;
-  const _StatusBadge({required this.isOpen});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: (isOpen ? _C.openGreen : _C.closeRed).withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(isOpen ? 'Open' : 'Closed',
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: isOpen ? _C.openGreen : _C.closeRed)),
-    );
-  }
-}
-
-class _CircleIconButton extends StatefulWidget {
+// _CircleIconButton — now uses SpringButton from widgets/spring_button.dart
+class _CircleIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   const _CircleIconButton({required this.icon, required this.onTap});
 
   @override
-  State<_CircleIconButton> createState() => _CircleIconButtonState();
-}
-
-class _CircleIconButtonState extends State<_CircleIconButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 220),
-    );
-    _scaleAnim = Tween(begin: 1.0, end: 0.88)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scaleAnim,
-        builder: (context, child) =>
-            Transform.scale(scale: _scaleAnim.value, child: child),
-        child: Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.85),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 10, offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Icon(widget.icon, size: 20, color: _C.textDark),
+    return SpringButton(
+      scaleFactor: 0.88,
+      onTap: onTap,
+      child: Container(
+        width: 42, height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.85),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.10),
+              blurRadius: 10, offset: const Offset(0, 3),
+            ),
+          ],
         ),
+        child: Icon(icon, size: 20, color: AppColors.textDarkAlt),
       ),
     );
   }
 }
 
-class _PillButton extends StatefulWidget {
+// _PillButton — now uses SpringButton from widgets/spring_button.dart
+class _PillButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   const _PillButton({required this.label, required this.icon, required this.onTap});
 
   @override
-  State<_PillButton> createState() => _PillButtonState();
-}
-
-class _PillButtonState extends State<_PillButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 220),
-    );
-    _scaleAnim = Tween(begin: 1.0, end: 0.94)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeIn));
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) {
-        _ctrl.reverse();
+    return SpringButton(
+      scaleFactor: 0.94,
+      onTap: () {
         HapticFeedback.lightImpact();
-        widget.onTap();
+        onTap();
       },
-      onTapCancel: () => _ctrl.reverse(),
-      child: AnimatedBuilder(
-        animation: _scaleAnim,
-        builder: (context, child) =>
-            Transform.scale(scale: _scaleAnim.value, child: child),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.88),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 12, offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(widget.icon, size: 18, color: _C.tealDark),
-            const SizedBox(width: 6),
-            Text(widget.label,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _C.textDark)),
-          ]),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.88),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 12, offset: const Offset(0, 3),
+            ),
+          ],
         ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 18, color: AppColors.tealDark),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w700,
+              color: AppColors.textDarkAlt)),
+        ]),
       ),
     );
   }
 }
 
-Route<dynamic> _smoothRoute(Widget page) {
-  return PageRouteBuilder(
-    pageBuilder: (_, a, __) => page,
-    transitionDuration: const Duration(milliseconds: 380),
-    reverseTransitionDuration: const Duration(milliseconds: 300),
-    transitionsBuilder: (_, animation, __, child) {
-      final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic);
-      return SlideTransition(
-        position: Tween<Offset>(
-                begin: const Offset(1.0, 0.0), end: Offset.zero)
-            .animate(curved),
-        child: FadeTransition(opacity: curved, child: child),
-      );
-    },
-  );
-}
+// _smoothRoute removed — use AppUI.smoothRoute<T>(page) instead
