@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -5,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:restroom_near_u/models/request_model.dart';
 import 'package:restroom_near_u/models/restroom_model.dart';
 import 'package:restroom_near_u/services/request_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../services/location_service.dart';
 import '../../utils/app_colors.dart';
@@ -30,6 +34,13 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   final _nameController      = TextEditingController();
   final _locationController  = TextEditingController();
   final _phoneController     = TextEditingController();
+  final _addressFocusNode    = FocusNode();
+
+  // Places Autocomplete
+  List<_PlaceSuggestion> _suggestions = [];
+  bool _showSuggestions = false;
+  Timer? _debounce;
+
   GoogleMapController? _mapController;
   LatLng _currentMapPosition = const LatLng(13.8478, 100.5696);
   double? _selectedLatitude;
@@ -84,16 +95,110 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero)
         .animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
 
+    _locationController.addListener(_onAddressChanged);
+    _addressFocusNode.addListener(() {
+      if (!_addressFocusNode.hasFocus) {
+        setState(() => _showSuggestions = false);
+      }
+    });
+
     _initLocation();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _enterCtrl.dispose();
     _nameController.dispose();
     _locationController.dispose();
     _phoneController.dispose();
+    _addressFocusNode.dispose();
     super.dispose();
+  }
+
+  // ── Places Autocomplete ───────────────────────────────────────────────────
+
+  void _onAddressChanged() {
+    final query = _locationController.text.trim();
+    if (query.length < 3) {
+      setState(() { _suggestions = []; _showSuggestions = false; });
+      return;
+    }
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _fetchSuggestions(query));
+  }
+
+  Future<void> _fetchSuggestions(String query) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY_ANDROID'] ?? '';
+
+    final uri = Uri.https('maps.googleapis.com', '/maps/api/place/autocomplete/json', {
+      'input': query,
+      'key': apiKey,
+      'language': 'th',
+      'components': 'country:th',
+      'types': 'establishment',
+    });
+
+    try {
+      final response = await http.get(uri);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final status = data['status'] as String? ?? '';
+        final predictions = data['predictions'] as List<dynamic>? ?? [];
+        setState(() {
+          _suggestions = predictions
+              .map((p) => _PlaceSuggestion(
+                    placeId: p['place_id'] as String,
+                    mainText: (p['structured_formatting']?['main_text'] ?? p['description']) as String,
+                    secondaryText: (p['structured_formatting']?['secondary_text'] ?? '') as String,
+                  ))
+              .toList();
+          _showSuggestions = _suggestions.isNotEmpty;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _selectSuggestion(_PlaceSuggestion suggestion) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY_ANDROID'] ?? '';
+    // Fill in address text
+    final fullAddress = suggestion.secondaryText.isNotEmpty
+        ? '${suggestion.mainText}, ${suggestion.secondaryText}'
+        : suggestion.mainText;
+
+    _locationController.removeListener(_onAddressChanged);
+    _locationController.text = fullAddress;
+    _locationController.addListener(_onAddressChanged);
+
+    setState(() { _suggestions = []; _showSuggestions = false; });
+    _addressFocusNode.unfocus();
+
+    // Fetch lat/lng from Place Details
+    try {
+      final url = 'https://maps.googleapis.com/maps/api/place/details/json'
+          '?place_id=${suggestion.placeId}'
+          '&fields=geometry'
+          '&key=$apiKey';
+      final response = await http.get(Uri.parse(url));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final loc  = data['result']?['geometry']?['location'];
+        if (loc != null) {
+          final lat = (loc['lat'] as num).toDouble();
+          final lng = (loc['lng'] as num).toDouble();
+          setState(() {
+            _selectedLatitude  = lat;
+            _selectedLongitude = lng;
+            _currentMapPosition = LatLng(lat, lng);
+          });
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(LatLng(lat, lng), 17.0),
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   // ── Location — now uses LocationService ───────────────────────────────────
@@ -323,11 +428,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
 
                           _sectionLabel('Address'),
                           const SizedBox(height: 10),
-                          _styledField(
-                            controller: _locationController,
-                            hint: 'e.g. Kasetsart University, Bangkok',
-                            icon: Icons.location_on_rounded,
-                          ),
+                          _addressFieldWithAutocomplete(),
                           const SizedBox(height: 20),
 
                           _sectionLabel('Phone Number'),
@@ -768,6 +869,134 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     );
   }
 
+  // ── Address field with Places Autocomplete dropdown ─────────────────────
+
+  Widget _addressFieldWithAutocomplete() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _locationController,
+          focusNode: _addressFocusNode,
+          style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+          decoration: InputDecoration(
+            hintText: 'e.g. Kasetsart University, Bangkok',
+            hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 14, right: 10),
+              child: const Icon(Icons.location_on_rounded, size: 18, color: AppColors.mint),
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+            suffixIcon: _locationController.text.isNotEmpty
+                ? GestureDetector(
+                    onTap: () {
+                      _locationController.clear();
+                      setState(() { _suggestions = []; _showSuggestions = false; });
+                    },
+                    child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textLight),
+                  )
+                : null,
+            filled: true,
+            fillColor: AppColors.fieldFill,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: AppColors.mint, width: 2)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+        // Dropdown suggestions
+        if (_showSuggestions && _suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.10),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Column(
+                children: _suggestions.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final s = entry.value;
+                  final isLast = i == _suggestions.length - 1;
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      _selectSuggestion(s);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: isLast ? null : Border(
+                          bottom: BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32, height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.mint.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.location_on_rounded,
+                                size: 16, color: AppColors.mint),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.mainText,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textDark,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (s.secondaryText.isNotEmpty)
+                                  Text(
+                                    s.secondaryText,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textLight,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.north_west_rounded,
+                              size: 14, color: AppColors.textLight),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _submitButton() {
     return SpringButton(
       onTap: _isSubmitting ? () {} : _submitForm,
@@ -797,4 +1026,18 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+// Places Autocomplete data model
+// ─────────────────────────────────────────────
+class _PlaceSuggestion {
+  final String placeId;
+  final String mainText;       // e.g. "Kasetsart University"
+  final String secondaryText; // e.g. "Bangkok, Thailand"
+  const _PlaceSuggestion({
+    required this.placeId,
+    required this.mainText,
+    required this.secondaryText,
+  });
 }
