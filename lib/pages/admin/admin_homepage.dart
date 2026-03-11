@@ -415,8 +415,18 @@ class _AdminHomePageState extends State<AdminHomePage>
                   color: _C.teal.withOpacity(0.35),
                   border: Border.all(color: _C.adminGold.withOpacity(0.6), width: 2),
                 ),
-                child: const Icon(Icons.person_rounded,
-                    size: 22, color: _C.tealDark),
+                child: ClipOval(
+                  child: _adminUser?.photoUrl != null && _adminUser!.photoUrl!.isNotEmpty
+                      ? Image.network(
+                          _adminUser!.photoUrl!,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                              Icons.person_rounded, size: 22, color: _C.tealDark),
+                        )
+                      : const Icon(Icons.person_rounded, size: 22, color: _C.tealDark),
+                ),
               ),
             ],
           ),

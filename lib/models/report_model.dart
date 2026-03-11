@@ -23,6 +23,9 @@ class ReportModel {
   // Photos attached to the report
   final List<String> photos;
 
+  // If this report is about a specific review (issueType == 'review')
+  final String reviewId;
+
   // Admin workflow
   final bool reviewed;
 
@@ -42,6 +45,7 @@ class ReportModel {
     this.reportedByEmail = '',
     this.isAnonymous = false,
     this.photos = const [],
+    this.reviewId = '',
     this.reviewed = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -64,6 +68,7 @@ class ReportModel {
       reportedByEmail: map['reportedByEmail']  ?? '',
       isAnonymous:     map['isAnonymous']      ?? false,
       photos:          List<String>.from(map['photos'] ?? []),
+      reviewId:        map['reviewId']         ?? '',
       reviewed:        map['reviewed']         ?? false,
       createdAt: map['createdAt'] != null
           ? (map['createdAt'] as Timestamp).toDate()
@@ -85,6 +90,7 @@ class ReportModel {
       'reportedByEmail': reportedByEmail,
       'isAnonymous':     isAnonymous,
       'photos':          photos,
+      'reviewId':        reviewId,
       'reviewed':        reviewed,
       'createdAt':       Timestamp.fromDate(createdAt),
     };
@@ -100,6 +106,7 @@ class ReportModel {
       case 'location':
       case 'price':
       case 'hours':
+      case 'review':
         return ReportSeverity.medium;
       default:
         return ReportSeverity.low;
@@ -115,6 +122,7 @@ class ReportModel {
       'hours':     'Incorrect Opening Hours',
       'amenities': 'Incorrect Amenities Info',
       'duplicate': 'Duplicate Entry',
+      'review':    'Inappropriate Review',
       'other':     'Other Issue',
     };
     return map[issueType] ?? 'Other Issue';
