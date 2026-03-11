@@ -186,7 +186,7 @@ class _RestroomDetailPageState extends State<RestroomDetailPage>
       selectedFilter = filter;
       switch (filter) {
         case 'Recent':
-          reviews.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           break;
         case 'Highest Rating':
           reviews.sort((a, b) => b.rating.compareTo(a.rating));

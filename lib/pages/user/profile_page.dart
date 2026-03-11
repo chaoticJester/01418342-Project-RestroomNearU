@@ -738,7 +738,7 @@ class _ReviewTile extends StatelessWidget {
                       Icon(Icons.access_time_rounded,
                           size: 11, color: _C.textLight),
                       const SizedBox(width: 3),
-                      Text(_timeAgo(review.timestamp),
+                      Text(_timeAgo(review.createdAt),
                           style: const TextStyle(
                               fontSize: 10, color: _C.textLight)),
                       const SizedBox(width: 12),

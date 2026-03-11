@@ -86,7 +86,7 @@ class ReviewCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    _timeAgo(review.timestamp),
+                    _timeAgo(review.createdAt),
                     style: const TextStyle(
                         fontSize: 10, color: AppColors.textLight),
                   ),
