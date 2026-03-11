@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,31 +20,90 @@ import '../../utils/app_colors.dart';
 typedef _C = AppColors;
 
 // ─────────────────────────────────────────────
-// Manual cluster — groups nearby restrooms
+// Clustering — grid-based, zoom-aware
 // ─────────────────────────────────────────────
-class _MarkerCluster {
+class _Cluster {
   final List<RestroomModel> items;
   final LatLng position; // centroid
-  _MarkerCluster(this.items, this.position);
+  _Cluster(this.items, this.position);
   bool get isCluster => items.length > 1;
 }
 
-List<_MarkerCluster> _buildClusters(
-    List<RestroomModel> restrooms, double zoom) {
-  // Grid cell size in degrees — shrinks as zoom increases
-  final cellSize = 40.0 / (zoom * zoom);
+List<_Cluster> _buildClusters(List<RestroomModel> restrooms, double zoom) {
+  // cellSize in degrees: ~8m at zoom 18 (fine enough for campus buildings)
+  // doubles every zoom step out: zoom17=~16m, zoom15=~64m, zoom12=~500m
+  final cellSize = 0.00008 * math.pow(2, (18 - zoom).clamp(0, 22));
   final Map<String, List<RestroomModel>> grid = {};
   for (final r in restrooms) {
-    final col = (r.longitude / cellSize).floor();
-    final row = (r.latitude / cellSize).floor();
-    final key = '$col:$row';
+    final key = '${(r.longitude / cellSize).floor()}:${(r.latitude / cellSize).floor()}';
     grid.putIfAbsent(key, () => []).add(r);
   }
   return grid.values.map((items) {
     final lat = items.map((r) => r.latitude).reduce((a, b) => a + b) / items.length;
     final lng = items.map((r) => r.longitude).reduce((a, b) => a + b) / items.length;
-    return _MarkerCluster(items, LatLng(lat, lng));
+    return _Cluster(items, LatLng(lat, lng));
   }).toList();
+}
+
+// ─────────────────────────────────────────────
+// Cluster icon renderer — iOS-style concentric rings
+// ─────────────────────────────────────────────
+Future<BitmapDescriptor> _renderClusterIcon(
+    int count, double dpr) async {
+  // Size scales with count: small=48, medium=56, large=64 dp
+  final double sizeDp = count < 10 ? 48 : count < 50 ? 56 : 64;
+  final double size = sizeDp * dpr;
+  final double cx = size / 2;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+
+  // Ring 3 — outermost, very faint
+  canvas.drawCircle(cx.asOffset, cx,
+      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.12));
+  // Ring 2 — mid
+  canvas.drawCircle(cx.asOffset, cx * 0.78,
+      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.22));
+  // Ring 1 — core fill
+  canvas.drawCircle(cx.asOffset, cx * 0.58,
+      Paint()..color = const Color(0xFF4AADA7));
+  // White inner border
+  canvas.drawCircle(
+    cx.asOffset, cx * 0.58,
+    Paint()
+      ..color = Colors.white.withOpacity(0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * dpr,
+  );
+
+  // Count label
+  final label = count > 99 ? '99+' : '$count';
+  final fontSize = count > 99 ? 10.0 : count > 9 ? 13.0 : 15.0;
+  final tp = TextPainter(
+    text: TextSpan(
+      text: label,
+      style: TextStyle(
+        fontSize: fontSize * dpr,
+        fontWeight: FontWeight.w800,
+        color: Colors.white,
+        letterSpacing: -0.3 * dpr,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  tp.paint(canvas, Offset(cx - tp.width / 2, cx - tp.height / 2));
+
+  final img = await recorder.endRecording()
+      .toImage(size.round(), size.round());
+  final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+  return BitmapDescriptor.fromBytes(
+    bytes!.buffer.asUint8List(),
+    size: Size(sizeDp, sizeDp),
+  );
+}
+
+extension _OffsetX on double {
+  Offset get asOffset => Offset(this, this);
 }
 
 // ─────────────────────────────────────────────
@@ -74,23 +134,23 @@ class _MarkerTier {
 const _tiers = [
   _MarkerTier(   // zoomed way out — tiny dot-like pin
     minZoom: 0,
-    cardDp: 14, borderDp: 2, radiusDp: 4,
+    cardDp: 18, borderDp: 2, radiusDp: 5,
     iconFontDp: 0, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
   ),
   _MarkerTier(   // medium zoom — card without pill
     minZoom: 13,
-    cardDp: 22, borderDp: 2, radiusDp: 6,
-    iconFontDp: 11, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
+    cardDp: 30, borderDp: 2.5, radiusDp: 8,
+    iconFontDp: 15, pillWDp: 0, pillHDp: 0, pillFontDp: 0,
   ),
   _MarkerTier(   // close zoom — full card + rating pill
     minZoom: 15,
-    cardDp: 34, borderDp: 3, radiusDp: 8,
-    iconFontDp: 17, pillWDp: 26, pillHDp: 11, pillFontDp: 6,
+    cardDp: 42, borderDp: 3, radiusDp: 10,
+    iconFontDp: 22, pillWDp: 32, pillHDp: 13, pillFontDp: 7,
   ),
   _MarkerTier(   // very close — large card + pill
     minZoom: 17,
-    cardDp: 42, borderDp: 3, radiusDp: 10,
-    iconFontDp: 21, pillWDp: 31, pillHDp: 13, pillFontDp: 7,
+    cardDp: 52, borderDp: 3.5, radiusDp: 12,
+    iconFontDp: 26, pillWDp: 38, pillHDp: 15, pillFontDp: 8,
   ),
 ];
 
@@ -132,7 +192,9 @@ class _UserHomePageState extends State<UserHomePage>
   final Completer<GoogleMapController> _mapCompleter = Completer();
   final Map<MarkerId, Marker> _markers = {};
   RestroomModel? _selectedRestroom;
-  int _rebuildGeneration = 0; // cancel stale async builds
+
+  // Cluster rebuild generation — cancels stale async builds
+  int _rebuildGen = 0;
 
   // Zoom tracking + debounce
   double _currentZoom = _initialZoom;
@@ -285,11 +347,10 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   void _onCameraMove(CameraPosition pos) {
-    final newZoom = pos.zoom;
-    if ((newZoom - _currentZoom).abs() < 0.3) return;
-    _currentZoom = newZoom;
+    // Always track current zoom — no threshold skip
+    _currentZoom = pos.zoom;
     _zoomDebounce?.cancel();
-    _zoomDebounce = Timer(const Duration(milliseconds: 200), () {
+    _zoomDebounce = Timer(const Duration(milliseconds: 150), () {
       final newTier = _tierForZoom(_currentZoom);
       if (newTier.minZoom != _currentTier.minZoom) {
         _currentTier = newTier;
@@ -299,35 +360,47 @@ class _UserHomePageState extends State<UserHomePage>
     });
   }
 
-  // Rebuild all markers using manual clustering
-  void _rebuildMarkers() {
-    if (!mounted) return;
-    _rebuildGeneration++;
-    final gen = _rebuildGeneration;
-    final clusters = _buildClusters(_filteredRestrooms, _currentZoom);
-    _buildMarkersFromClusters(clusters, gen);
+  void _onCameraIdle() {
+    // Final rebuild after animation ends (e.g. pinch-to-zoom)
+    _zoomDebounce?.cancel();
+    final newTier = _tierForZoom(_currentZoom);
+    if (newTier.minZoom != _currentTier.minZoom) {
+      _currentTier = newTier;
+      _bitmapCache.clear();
+    }
+    _rebuildMarkers();
   }
 
-  Future<void> _buildMarkersFromClusters(
-      List<_MarkerCluster> clusters, int gen) async {
+  void _rebuildMarkers() {
+    if (!mounted) return;
+    _rebuildGen++;
+    final gen = _rebuildGen;
+    final clusters = _buildClusters(_filteredRestrooms, _currentZoom);
+    _buildMarkersAsync(clusters, gen);
+  }
+
+  Future<void> _buildMarkersAsync(List<_Cluster> clusters, int gen) async {
     final newMarkers = <MarkerId, Marker>{};
+
     for (final cluster in clusters) {
-      if (gen != _rebuildGeneration) return; // stale — a newer build started
+      if (gen != _rebuildGen) return; // newer build started, bail
+
       if (cluster.isCluster) {
+        // iOS-style concentric ring bubble
         final icon = await _renderClusterIcon(cluster.items.length, _dpr);
-        final mid = MarkerId(
-            'cluster_${cluster.position.latitude}_${cluster.position.longitude}');
+        if (gen != _rebuildGen) return;
+        final mid = MarkerId('c_${cluster.position.latitude}_${cluster.position.longitude}');
         newMarkers[mid] = Marker(
           markerId: mid,
           position: cluster.position,
           icon: icon,
           anchor: const Offset(0.5, 0.5),
-          zIndex: 2.0,
+          zIndex: 3.0,
           onTap: () async {
             HapticFeedback.lightImpact();
             final ctrl = await _mapCompleter.future;
             ctrl.animateCamera(
-              CameraUpdate.newLatLngZoom(cluster.position, _currentZoom + 2),
+              CameraUpdate.newLatLngZoom(cluster.position, _currentZoom + 2.5),
             );
           },
         );
@@ -335,6 +408,7 @@ class _UserHomePageState extends State<UserHomePage>
         final r = cluster.items.first;
         final isSelected = _selectedRestroom?.restroomId == r.restroomId;
         final icon = await _iconForTier(r, _currentTier, isSelected: isSelected);
+        if (gen != _rebuildGen) return;
         final mid = MarkerId(r.restroomId);
         newMarkers[mid] = Marker(
           markerId: mid,
@@ -343,72 +417,19 @@ class _UserHomePageState extends State<UserHomePage>
           anchor: _currentTier.pillHDp > 0
               ? const Offset(0.5, 0.60)
               : const Offset(0.5, 0.5),
-          zIndex: isSelected ? 1.0 : 0.0,
+          zIndex: isSelected ? 2.0 : 1.0,
           onTap: () => _onMarkerTap(r),
         );
       }
     }
-    if (mounted && gen == _rebuildGeneration) {
+
+    if (mounted && gen == _rebuildGen) {
       setState(() {
         _markers
           ..clear()
           ..addAll(newMarkers);
       });
     }
-  }
-
-  // Render a teal bubble with a count number for clusters
-  static Future<BitmapDescriptor> _renderClusterIcon(
-      int count, double dpr) async {
-    const double sizeDp = 52;
-    final double size = sizeDp * dpr;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    final center = Offset(size / 2, size / 2);
-
-    // Outer shadow ring
-    canvas.drawCircle(
-      center,
-      size / 2,
-      Paint()..color = const Color(0xFF4AADA7).withOpacity(0.25),
-    );
-    // Main circle
-    canvas.drawCircle(
-      center,
-      size / 2 - 4 * dpr,
-      Paint()..color = const Color(0xFF4AADA7),
-    );
-    // White border
-    canvas.drawCircle(
-      center,
-      size / 2 - 2 * dpr,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5 * dpr,
-    );
-
-    final tp = TextPainter(
-      text: TextSpan(
-        text: count > 99 ? '99+' : '$count',
-        style: TextStyle(
-          fontSize: 15 * dpr,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas,
-        Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
-
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(size.round(), size.round());
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.fromBytes(
-      byteData!.buffer.asUint8List(),
-      size: Size(sizeDp, sizeDp),
-    );
   }
 
   void _refreshSelectionMarkers({
@@ -614,7 +635,7 @@ class _UserHomePageState extends State<UserHomePage>
                   _rebuildMarkers();
                 },
                 onCameraMove: _onCameraMove,
-                onCameraIdle: _rebuildMarkers,
+                onCameraIdle: _onCameraIdle,
                 onTap: (_) => _dismissPopup(),
               ),
             ),
