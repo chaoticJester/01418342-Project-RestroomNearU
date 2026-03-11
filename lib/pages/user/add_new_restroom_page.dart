@@ -34,6 +34,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   final _nameController      = TextEditingController();
   final _locationController  = TextEditingController();
   final _phoneController     = TextEditingController();
+  final _priceController     = TextEditingController();
   final _addressFocusNode    = FocusNode();
 
   // Places Autocomplete
@@ -112,6 +113,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
     _nameController.dispose();
     _locationController.dispose();
     _phoneController.dispose();
+    _priceController.dispose();
     _addressFocusNode.dispose();
     super.dispose();
   }
@@ -319,6 +321,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         openTime:     openTime  != null ? _formatTime24(openTime!)  : null,
         closeTime:    closeTime != null ? _formatTime24(closeTime!) : null,
         isFree:       isFree,
+        price:        isFree ? null : double.tryParse(_priceController.text.trim()),
         is24hrs:      is24Hours,
         phoneNumber:  _phoneController.text,
         amenities:    _amenities,
@@ -444,6 +447,49 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
                           _sectionLabel('Price'),
                           const SizedBox(height: 12),
                           _priceToggle(),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            child: isFree
+                                ? const SizedBox.shrink()
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: TextFormField(
+                                      controller: _priceController,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+                                      validator: (v) {
+                                        if (isFree) return null;
+                                        if (v == null || v.trim().isEmpty) return 'Please enter a price';
+                                        if (double.tryParse(v.trim()) == null) return 'Enter a valid number';
+                                        return null;
+                                      },
+                                      decoration: InputDecoration(
+                                        hintText: '0.00',
+                                        hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
+                                        prefixIcon: Padding(
+                                          padding: const EdgeInsets.only(left: 14, right: 10),
+                                          child: const Icon(Icons.paid_rounded, size: 18, color: AppColors.pink),
+                                        ),
+                                        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                                        prefix: const Text('฿ ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.pink)),
+                                        filled: true,
+                                        fillColor: AppColors.fieldFill,
+                                        border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                                        enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                                        focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                            borderSide: const BorderSide(color: AppColors.pink, width: 2)),
+                                        errorBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                            borderSide: const BorderSide(color: AppColors.pink, width: 2)),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                      ),
+                                    ),
+                                  ),
+                          ),
                           const SizedBox(height: 24),
 
                           _sectionLabel('Opening Hours'),
