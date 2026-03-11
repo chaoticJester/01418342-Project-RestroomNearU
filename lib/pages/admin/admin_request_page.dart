@@ -477,13 +477,24 @@ class _RequestCardState extends State<_RequestCard>
 // ─────────────────────────────────────────────
 // Request Detail Popup (bottom sheet)
 // ─────────────────────────────────────────────
-class _RequestPopup extends StatelessWidget {
+class _RequestPopup extends StatefulWidget {
   final RequestModel request;
   final RequestService requestService;
   final String? userName;
 
   const _RequestPopup(
       {required this.request, required this.requestService, this.userName});
+
+  @override
+  State<_RequestPopup> createState() => _RequestPopupState();
+}
+
+class _RequestPopupState extends State<_RequestPopup> {
+  bool _isProcessing = false;
+
+  RequestModel get request => widget.request;
+  RequestService get requestService => widget.requestService;
+  String? get userName => widget.userName;
 
   // ── EmailJS helper ────────────────────────────────────────────────────
   Future<String?> _sendEmail({
@@ -518,6 +529,8 @@ class _RequestPopup extends StatelessWidget {
 
   // ── Approve ───────────────────────────────────────────────────────────
   Future<void> _approve(BuildContext context) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     try {
       final newRestroomId =
           FirebaseFirestore.instance.collection('restrooms').doc().id;
@@ -581,11 +594,15 @@ class _RequestPopup extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   // ── Reject ────────────────────────────────────────────────────────────
   Future<void> _reject(BuildContext context) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -672,6 +689,8 @@ class _RequestPopup extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) _snack(context, 'Error: $e', _C.redLight);
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -818,6 +837,7 @@ class _RequestPopup extends StatelessWidget {
                             child: _ActionButton(
                               label: 'Approve',
                               color: _C.green,
+                              isLoading: _isProcessing,
                               onTap: () => _approve(context),
                             ),
                           ),
@@ -826,6 +846,7 @@ class _RequestPopup extends StatelessWidget {
                             child: _ActionButton(
                               label: 'Reject',
                               color: _C.redLight,
+                              isLoading: _isProcessing,
                               onTap: () => _reject(context),
                             ),
                           ),
@@ -1054,8 +1075,9 @@ class _ActionButton extends StatefulWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+  final bool isLoading;
   const _ActionButton(
-      {required this.label, required this.color, required this.onTap});
+      {required this.label, required this.color, required this.onTap, this.isLoading = false});
 
   @override
   State<_ActionButton> createState() => _ActionButtonState();
@@ -1086,42 +1108,52 @@ class _ActionButtonState extends State<_ActionButton>
 
   @override
   Widget build(BuildContext context) {
+    final disabled = widget.isLoading;
     return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) {
+      onTapDown: disabled ? null : (_) => _ctrl.forward(),
+      onTapUp: disabled ? null : (_) {
         _ctrl.reverse();
         HapticFeedback.mediumImpact();
         widget.onTap();
       },
-      onTapCancel: () => _ctrl.reverse(),
+      onTapCancel: disabled ? null : () => _ctrl.reverse(),
       child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [widget.color, widget.color.withOpacity(0.8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withOpacity(0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 5),
+        child: AnimatedOpacity(
+          opacity: disabled ? 0.6 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [widget.color, widget.color.withOpacity(0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
-          ),
-          child: Center(
-            child: Text(widget.label,
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white)),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Center(
+              child: disabled
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(widget.label,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+            ),
           ),
         ),
       ),

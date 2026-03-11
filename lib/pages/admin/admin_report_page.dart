@@ -239,6 +239,7 @@ class _AdminReportPageState extends State<AdminReportPage>
   // ── Report Detail Bottom Sheet ────────────────────────────────────────
   void _showReportDetail(
       BuildContext context, ReportModel report) {
+    bool isProcessing = false;
     final reportId      = report.reportId;
     final title         = report.title;
     final reportedBy    = report.reportedByName;
@@ -394,26 +395,38 @@ class _AdminReportPageState extends State<AdminReportPage>
                       const SizedBox(height: 24),
 
                       // Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ActionButton(
-                              label: 'Mark as Reviewed',
-                              color: _C.green,
-                              onTap: () =>
-                                  _markReviewed(context, reportId),
+                      StatefulBuilder(
+                        builder: (ctx2, setBtn) => Row(
+                          children: [
+                            Expanded(
+                              child: _ActionButton(
+                                label: 'Mark as Reviewed',
+                                color: _C.green,
+                                isLoading: isProcessing,
+                                onTap: () async {
+                                  if (isProcessing) return;
+                                  setBtn(() => isProcessing = true);
+                                  await _markReviewed(context, reportId);
+                                  setBtn(() => isProcessing = false);
+                                },
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _ActionButton(
-                              label: 'Dismiss',
-                              color: _C.redLight,
-                              onTap: () =>
-                                  _dismissReport(context, reportId),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ActionButton(
+                                label: 'Dismiss',
+                                color: _C.redLight,
+                                isLoading: isProcessing,
+                                onTap: () async {
+                                  if (isProcessing) return;
+                                  setBtn(() => isProcessing = true);
+                                  await _dismissReport(context, reportId);
+                                  setBtn(() => isProcessing = false);
+                                },
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -765,8 +778,9 @@ class _ActionButton extends StatefulWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+  final bool isLoading;
   const _ActionButton(
-      {required this.label, required this.color, required this.onTap});
+      {required this.label, required this.color, required this.onTap, this.isLoading = false});
 
   @override
   State<_ActionButton> createState() => _ActionButtonState();
@@ -797,42 +811,48 @@ class _ActionButtonState extends State<_ActionButton>
 
   @override
   Widget build(BuildContext context) {
+    final disabled = widget.isLoading;
     return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) {
+      onTapDown: disabled ? null : (_) => _ctrl.forward(),
+      onTapUp: disabled ? null : (_) {
         _ctrl.reverse();
         HapticFeedback.mediumImpact();
         widget.onTap();
       },
-      onTapCancel: () => _ctrl.reverse(),
+      onTapCancel: disabled ? null : () => _ctrl.reverse(),
       child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [widget.color, widget.color.withOpacity(0.8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        child: AnimatedOpacity(
+          opacity: disabled ? 0.6 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [widget.color, widget.color.withOpacity(0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                    color: widget.color.withOpacity(0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5)),
+              ],
             ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                  color: widget.color.withOpacity(0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 5)),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              widget.label,
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white),
+            child: Center(
+              child: disabled
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(widget.label,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
             ),
           ),
         ),

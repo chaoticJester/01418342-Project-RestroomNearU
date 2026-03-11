@@ -41,6 +41,7 @@ class _AdminTotalToiletsPageState extends State<AdminTotalToiletsPage>
   String _searchQuery = '';
   String _selectedFilter = 'All';
   late AnimationController _listEntryController;
+  final Set<String> _deletingIds = {};
 
   final filters = ['All', 'Free', 'Paid', 'Open', 'Closed'];
 
@@ -142,6 +143,8 @@ class _AdminTotalToiletsPageState extends State<AdminTotalToiletsPage>
     );
 
     if (confirmed == true && context.mounted) {
+      if (_deletingIds.contains(restroom.restroomId)) return;
+      setState(() => _deletingIds.add(restroom.restroomId));
       try {
         await _restroomService.deleteRestroom(restroom.restroomId);
         if (context.mounted) {
@@ -161,6 +164,8 @@ class _AdminTotalToiletsPageState extends State<AdminTotalToiletsPage>
             SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
           );
         }
+      } finally {
+        if (mounted) setState(() => _deletingIds.remove(restroom.restroomId));
       }
     }
   }

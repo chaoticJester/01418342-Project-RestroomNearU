@@ -65,6 +65,7 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
 
   List<File> _localPhotos     = [];
   bool _isUploadingPhotos     = false;
+  bool _isSubmitting           = false;
 
   late AnimationController _enterCtrl;
   late Animation<double>   _fadeAnim;
@@ -171,8 +172,10 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
   // ── Submit ────────────────────────────────────────────────────────────────
 
   Future<void> _submitForm() async {
+    if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) return;
     HapticFeedback.mediumImpact();
+    setState(() => _isSubmitting = true);
 
     if (_selectedLatitude == null || _selectedLongitude == null) {
       AppUI.showSnackBar(
@@ -238,6 +241,8 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
         AppUI.replaceSnackBar(context, 'Failed to submit request. Please try again.',
             isError: true);
       }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -765,22 +770,29 @@ class _AddNewRestroomPageState extends State<AddNewRestroomPage>
 
   Widget _submitButton() {
     return SpringButton(
-      onTap: _submitForm,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 17),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [AppColors.mint, AppColors.mintDark],
-              begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [BoxShadow(color: AppColors.mint.withOpacity(0.4),
-              blurRadius: 20, offset: const Offset(0, 8))],
-        ),
-        child: const Center(
-          child: Text('Submit Restroom',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
-                  color: Colors.white, letterSpacing: 0.3)),
+      onTap: _isSubmitting ? () {} : _submitForm,
+      child: AnimatedOpacity(
+        opacity: _isSubmitting ? 0.6 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+                colors: [AppColors.mint, AppColors.mintDark],
+                begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: AppColors.mint.withOpacity(0.4),
+                blurRadius: 20, offset: const Offset(0, 8))],
+          ),
+          child: Center(
+            child: _isSubmitting
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Submit Restroom',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+                        color: Colors.white, letterSpacing: 0.3)),
+          ),
         ),
       ),
     );
