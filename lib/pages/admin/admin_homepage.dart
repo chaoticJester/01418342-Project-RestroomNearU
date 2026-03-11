@@ -575,6 +575,14 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   Widget _buildMostReviewedPanel() {
+    // Each row ≈ 74px, header ≈ 72px — cap at 4 rows visible
+    const double rowH   = 74.0;
+    const double headerH = 72.0;
+    const double maxRows = 4;
+    final double listH = _topToilets.isEmpty
+        ? 80
+        : (rowH * _topToilets.length.clamp(1, maxRows));
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -591,11 +599,11 @@ class _AdminHomePageState extends State<AdminHomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Header ──
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 36, height: 36,
                 decoration: BoxDecoration(
                   color: _C.teal.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(10),
@@ -607,38 +615,49 @@ class _AdminHomePageState extends State<AdminHomePage>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [
-                  Text(
-                    'Most Reviewed',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _C.textDark),
-                  ),
+                  Text('Most Reviewed',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _C.textDark)),
                   Text('All time',
                       style: TextStyle(fontSize: 12, color: _C.textLight)),
                 ],
               ),
+              const Spacer(),
+              if (_topToilets.length > maxRows)
+                Text('${_topToilets.length} total',
+                    style: const TextStyle(fontSize: 11, color: _C.textLight)),
             ],
           ),
           const SizedBox(height: 16),
-          if (_topToilets.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  'No reviews yet',
-                  style: TextStyle(fontSize: 14, color: _C.textLight),
-                ),
-              ),
-            )
-          else
-            ..._topToilets.map((t) => _TopToiletRow(toilet: t)),
+          // ── Scrollable list ──
+          SizedBox(
+            height: listH,
+            child: _topToilets.isEmpty
+                ? const Center(
+                    child: Text('No reviews yet',
+                        style: TextStyle(fontSize: 14, color: _C.textLight)))
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: _topToilets.length,
+                    itemBuilder: (_, i) =>
+                        _TopToiletRow(toilet: _topToilets[i]),
+                  ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTrendingLocationsPanel() {
+    const double rowH   = 74.0;
+    const double maxRows = 4;
+    final double listH = _trendingLocations.isEmpty
+        ? 80
+        : (rowH * _trendingLocations.length.clamp(1, maxRows));
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -655,11 +674,11 @@ class _AdminHomePageState extends State<AdminHomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Header ──
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 36, height: 36,
                 decoration: BoxDecoration(
                   color: _C.teal.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(10),
@@ -671,32 +690,37 @@ class _AdminHomePageState extends State<AdminHomePage>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [
-                  Text(
-                    'Trending Areas',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _C.textDark),
-                  ),
+                  Text('Trending Areas',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _C.textDark)),
                   Text('Most restrooms',
                       style: TextStyle(fontSize: 12, color: _C.textLight)),
                 ],
               ),
+              const Spacer(),
+              if (_trendingLocations.length > maxRows)
+                Text('${_trendingLocations.length} total',
+                    style: const TextStyle(fontSize: 11, color: _C.textLight)),
             ],
           ),
           const SizedBox(height: 16),
-          if (_trendingLocations.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  'No data yet',
-                  style: TextStyle(fontSize: 14, color: _C.textLight),
-                ),
-              ),
-            )
-          else
-            ..._trendingLocations.map((l) => _TrendingRow(location: l)),
+          // ── Scrollable list ──
+          SizedBox(
+            height: listH,
+            child: _trendingLocations.isEmpty
+                ? const Center(
+                    child: Text('No data yet',
+                        style: TextStyle(fontSize: 14, color: _C.textLight)))
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: _trendingLocations.length,
+                    itemBuilder: (_, i) =>
+                        _TrendingRow(location: _trendingLocations[i]),
+                  ),
+          ),
         ],
       ),
     );
