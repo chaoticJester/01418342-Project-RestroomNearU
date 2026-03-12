@@ -7,6 +7,7 @@ import 'package:restroom_near_u/models/user_model.dart';
 import 'package:restroom_near_u/pages/admin/admin_request_page.dart';
 import 'package:restroom_near_u/pages/admin/admin_profile_page.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
+import 'package:restroom_near_u/widgets/profile_avatar_widget.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -82,12 +83,12 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   Future<void> _loadData() async {
-    // Load admin user info (one-time)
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final userModel = await _userService.getUserById(user.uid);
-      if (mounted) setState(() => _adminUser = userModel);
-    }
+    // Load admin user info (real-time stream)
+    _subs.add(
+      _userService.getCurrentUserStream().listen((user) {
+        if (mounted) setState(() => _adminUser = user);
+      }),
+    );
 
     // ── Real-time stream: Pending requests ──────────────────────────
     _subs.add(
@@ -407,26 +408,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                 ],
               ),
               const SizedBox(width: 8),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _C.teal.withOpacity(0.35),
-                  border: Border.all(color: _C.adminGold.withOpacity(0.6), width: 2),
-                ),
-                child: ClipOval(
-                  child: _adminUser?.photoUrl != null && _adminUser!.photoUrl!.isNotEmpty
-                      ? Image.network(
-                          _adminUser!.photoUrl!,
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                              Icons.person_rounded, size: 22, color: _C.tealDark),
-                        )
-                      : const Icon(Icons.person_rounded, size: 22, color: _C.tealDark),
-                ),
+              // Updated to use ProfileAvatarWidget for consistent profile picture display
+              ProfileAvatarWidget(
+                photoUrl: _adminUser?.photoUrl,
+                size: 44,
+                showEditButton: false,
+                isAdmin: true,
               ),
             ],
           ),

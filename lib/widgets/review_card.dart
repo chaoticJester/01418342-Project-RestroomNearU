@@ -69,8 +69,19 @@ class ReviewCard extends StatelessWidget {
                 ),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.person_rounded,
-                  size: 20, color: AppColors.pink),
+              child: ClipOval(
+                child: review.reviewerPhotoUrl.isNotEmpty
+                    ? Image.network(
+                        review.reviewerPhotoUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            size: 20,
+                            color: AppColors.pink),
+                      )
+                    : const Icon(Icons.person_rounded,
+                        size: 20, color: AppColors.pink),
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
