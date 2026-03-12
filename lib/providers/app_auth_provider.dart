@@ -6,7 +6,9 @@ import 'package:restroom_near_u/models/user_model.dart';
 
 class AppAuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId: '24992553222-2km9bqg2obd03ufh939evmaok3rf8hpk.apps.googleusercontent.com',
+  );
   final UserService _userService = UserService(); 
 
   bool _isLoading = false;
@@ -138,9 +140,9 @@ class AppAuthProvider extends ChangeNotifier {
 
     } catch (e) {
       if (context.mounted) {
-        _showError(context, "Login with google failed.");
+        _showError(context, "Google sign-in failed: ${e.toString()}");
       }
-      debugPrint(e.toString());
+      debugPrint('Google sign-in error: $e');
     } finally {
       _setLoading(false);
     }
