@@ -3,7 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:restroom_near_u/utils/helpers.dart';
 import 'package:restroom_near_u/services/report_firestore.dart';
+import 'package:restroom_near_u/services/review_firestore.dart';
+import 'package:restroom_near_u/services/restroom_firestore.dart';
+import 'package:restroom_near_u/services/user_firestore.dart';
 import 'package:restroom_near_u/models/report_model.dart';
+import 'package:restroom_near_u/models/review_model.dart';
 
 // ─────────────────────────────────────────────
 // Design tokens
@@ -255,7 +259,7 @@ class _AdminReportPageState extends State<AdminReportPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         initialChildSize: 0.75,
         minChildSize: 0.4,
         maxChildSize: 0.92,
@@ -394,40 +398,90 @@ class _AdminReportPageState extends State<AdminReportPage>
                       ),
                       const SizedBox(height: 24),
 
-                      // Buttons
-                      StatefulBuilder(
-                        builder: (ctx2, setBtn) => Row(
-                          children: [
-                            Expanded(
-                              child: _ActionButton(
-                                label: 'Mark as Reviewed',
-                                color: _C.green,
-                                isLoading: isProcessing,
-                                onTap: () async {
-                                  if (isProcessing) return;
-                                  setBtn(() => isProcessing = true);
-                                  await _markReviewed(context, reportId);
-                                  setBtn(() => isProcessing = false);
-                                },
+                      // Buttons — read-only if already reviewed
+                      if (report.reviewed)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _C.green.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: _C.green.withOpacity(0.3), width: 1.5),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36, height: 36,
+                                decoration: BoxDecoration(
+                                  color: _C.green.withOpacity(0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 20, color: _C.green),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _ActionButton(
-                                label: 'Dismiss',
-                                color: _C.redLight,
-                                isLoading: isProcessing,
-                                onTap: () async {
-                                  if (isProcessing) return;
-                                  setBtn(() => isProcessing = true);
-                                  await _dismissReport(context, reportId);
-                                  setBtn(() => isProcessing = false);
-                                },
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Already Reviewed',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: _C.green)),
+                                    Text(
+                                        'This report has been resolved and is read-only.',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: _C.textLight)),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        )
+                      else
+                        StatefulBuilder(
+                          builder: (ctx2, setBtn) => Row(
+                            children: [
+                              Expanded(
+                                child: _ActionButton(
+                                  label: 'Mark Reviewed',
+                                  color: _C.green,
+                                  icon: Icons.check_circle_rounded,
+                                  isLoading: isProcessing,
+                                  onTap: () async {
+                                    if (isProcessing) return;
+                                    setBtn(() => isProcessing = true);
+                                    await _showMarkReviewedDialog(
+                                        sheetCtx, report);
+                                    setBtn(() => isProcessing = false);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ActionButton(
+                                  label: 'Dismiss',
+                                  color: _C.redLight,
+                                  icon: Icons.delete_outline_rounded,
+                                  isLoading: isProcessing,
+                                  onTap: () async {
+                                    if (isProcessing) return;
+                                    setBtn(() => isProcessing = true);
+                                    await _dismissReport(
+                                        sheetCtx, reportId);
+                                    setBtn(() => isProcessing = false);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -475,19 +529,226 @@ class _AdminReportPageState extends State<AdminReportPage>
     );
   }
 
-  Future<void> _markReviewed(
-      BuildContext context, String reportId) async {
-    try {
-      await _reportService.markAsReviewed(reportId);
-      if (context.mounted) {
-        Navigator.pop(context);
-        _snack(context, 'Report marked as reviewed.', _C.green);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        _snack(context, 'Error: $e', _C.redLight);
-      }
+  // ── Mark Reviewed with contextual action dialog ─────────────────────
+  Future<void> _showMarkReviewedDialog(
+      BuildContext sheetCtx, ReportModel report) async {
+    final isReviewReport   = report.issueType == 'review' && report.reviewId.isNotEmpty;
+    final isRestroomReport = !isReviewReport && report.restroomId.isNotEmpty;
+
+    // Fetch relevant data
+    ReviewModel? reviewData;
+    if (isReviewReport) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('reviews')
+            .doc(report.reviewId)
+            .get();
+        if (doc.exists) {
+          reviewData = ReviewModel.fromMap(
+              doc.data() as Map<String, dynamic>, doc.id);
+        }
+      } catch (_) {}
     }
+
+    if (!sheetCtx.mounted) return;
+
+    // Build dialog based on report type
+    bool deleteTarget    = false; // delete review OR restroom
+    bool suspendUser     = false;
+    int  suspendDays     = 7;
+    bool isActioning     = false;
+
+    await showDialog(
+      context: sheetCtx,
+      barrierDismissible: false,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDlg) => AlertDialog(
+          backgroundColor: _C.bg,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: _C.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.check_circle_rounded,
+                    size: 20, color: _C.green),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Mark as Reviewed',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _C.textDark)),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isReviewReport
+                    ? 'This report is about a review. Choose additional actions:'
+                    : isRestroomReport
+                        ? 'This report is about a restroom. Choose additional actions:'
+                        : 'Mark this report as reviewed.',
+                style: const TextStyle(
+                    fontSize: 13, color: _C.textMid, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Delete toggle ──
+              if (isReviewReport || isRestroomReport) ...
+                [
+                  _CheckTile(
+                    value: deleteTarget,
+                    icon: Icons.delete_rounded,
+                    iconColor: _C.redLight,
+                    label: isReviewReport
+                        ? 'Delete this review'
+                        : 'Delete this restroom',
+                    subtitle: isReviewReport
+                        ? (reviewData != null
+                            ? 'By ${reviewData.reviewerName}'
+                            : 'Review #${report.reviewId.substring(0, 8)}')
+                        : report.restroomName,
+                    onChanged: (v) => setDlg(() => deleteTarget = v),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
+              // ── Suspend user toggle ──
+              if (report.reportedById.isNotEmpty) ...
+                [
+                  _CheckTile(
+                    value: suspendUser,
+                    icon: Icons.block_rounded,
+                    iconColor: _C.orange,
+                    label: 'Suspend reported user',
+                    subtitle: isReviewReport && reviewData != null
+                        ? reviewData.reviewerName
+                        : report.reportedByName,
+                    onChanged: (v) => setDlg(() => suspendUser = v),
+                  ),
+                  if (suspendUser) ...
+                    [
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Text('Suspend for:',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: _C.textMid)),
+                          const SizedBox(width: 8),
+                          ...[1, 3, 7, 30].map((d) => GestureDetector(
+                                onTap: () => setDlg(() => suspendDays = d),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: suspendDays == d
+                                        ? _C.orange
+                                        : _C.fieldFill,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${d}d',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: suspendDays == d
+                                            ? Colors.white
+                                            : _C.textMid),
+                                  ),
+                                ),
+                              )),
+                        ],
+                      ),
+                    ],
+                ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isActioning
+                  ? null
+                  : () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel',
+                  style: TextStyle(
+                      color: _C.textMid, fontWeight: FontWeight.w600)),
+            ),
+            TextButton(
+              onPressed: isActioning
+                  ? null
+                  : () async {
+                      setDlg(() => isActioning = true);
+                      try {
+                        // 1. Mark report reviewed
+                        await _reportService.markAsReviewed(report.reportId);
+
+                        // 2. Delete review or restroom
+                        if (deleteTarget) {
+                          if (isReviewReport && reviewData != null) {
+                            await ReviewService().deleteReview(reviewData);
+                          } else if (isRestroomReport) {
+                            await RestroomService()
+                                .deleteRestroom(report.restroomId);
+                          }
+                        }
+
+                        // 3. Suspend user
+                        if (suspendUser) {
+                          final targetUserId = isReviewReport && reviewData != null
+                              ? reviewData.reviewerId
+                              : report.reportedById;
+                          if (targetUserId.isNotEmpty) {
+                            final until = DateTime.now()
+                                .add(Duration(days: suspendDays));
+                            await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(targetUserId)
+                                .update({
+                              'isBanned': false,
+                              'suspendedUntil':
+                                  Timestamp.fromDate(until),
+                            });
+                          }
+                        }
+
+                        if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                        if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                        _snack(sheetCtx,
+                            'Report reviewed${deleteTarget ? ' · content removed' : ''}${suspendUser ? ' · user suspended ${suspendDays}d' : ''}.',
+                            _C.green);
+                      } catch (e) {
+                        setDlg(() => isActioning = false);
+                        if (dialogCtx.mounted) {
+                          _snack(dialogCtx, 'Error: $e', _C.redLight);
+                        }
+                      }
+                    },
+              child: isActioning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: _C.green))
+                  : const Text('Confirm',
+                      style: TextStyle(
+                          color: _C.green, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _dismissReport(
@@ -777,10 +1038,11 @@ class _SeverityBadge extends StatelessWidget {
 class _ActionButton extends StatefulWidget {
   final String label;
   final Color color;
+  final IconData? icon;
   final VoidCallback onTap;
   final bool isLoading;
   const _ActionButton(
-      {required this.label, required this.color, required this.onTap, this.isLoading = false});
+      {required this.label, required this.color, this.icon, required this.onTap, this.isLoading = false});
 
   @override
   State<_ActionButton> createState() => _ActionButtonState();
@@ -848,11 +1110,20 @@ class _ActionButtonState extends State<_ActionButton>
               child: disabled
                   ? const SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text(widget.label,
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.icon != null) ...[  
+                          Icon(widget.icon, size: 15, color: Colors.white),
+                          const SizedBox(width: 5),
+                        ],
+                        Text(widget.label,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
+                      ],
+                    ),
             ),
           ),
         ),
@@ -924,6 +1195,97 @@ class _BackButtonState extends State<_BackButton>
           ),
           child: const Icon(Icons.arrow_back_ios_new_rounded,
               size: 18, color: _C.textDark),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Checkbox tile used inside the reviewed dialog
+// ─────────────────────────────────────────────
+class _CheckTile extends StatelessWidget {
+  final bool value;
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String subtitle;
+  final ValueChanged<bool> onChanged;
+
+  const _CheckTile({
+    required this.value,
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.subtitle,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onChanged(!value);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: value
+              ? iconColor.withOpacity(0.08)
+              : const Color(0xFFEEEBDA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: value ? iconColor.withOpacity(0.4) : const Color(0xFFECE9DA),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: iconColor),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1C1B1F))),
+                  if (subtitle.isNotEmpty)
+                    Text(subtitle,
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFFAEABB8)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22, height: 22,
+              decoration: BoxDecoration(
+                color: value ? iconColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                    color: value ? iconColor : const Color(0xFFAEABB8),
+                    width: 2),
+              ),
+              child: value
+                  ? const Icon(Icons.check_rounded,
+                      size: 14, color: Colors.white)
+                  : null,
+            ),
+          ],
         ),
       ),
     );
