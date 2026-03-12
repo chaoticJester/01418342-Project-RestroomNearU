@@ -117,6 +117,9 @@ class AppAuthProvider extends ChangeNotifier {
   Future<void> signInWithGoogle(BuildContext context) async {
     try {
       _setLoading(true);
+
+      // Sign out first to always show the account picker
+      await _googleSignIn.signOut();
       
       // ให้เด้งหน้าต่างเลือกบัญชี Google
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();

@@ -1,4 +1,4 @@
-# Project Analysis Summary
+# Project Analysis Summary (see PROJECT_PRESENTATION.md for teacher presentation)
 
 ## ✅ What's Already Good
 
